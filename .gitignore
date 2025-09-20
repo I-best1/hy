@@ -1,0 +1,20 @@
+# Node / Python / system files
+__pycache__/
+*.pyc
+*.pyo
+*.swp
+.DS_Store
+Thumbs.db
+
+# ngrok and downloaded archives
+ngrok.exe
+ngrok.zip
+
+# PowerShell history
+Microsoft.PowerShell_profile.ps1
+
+# VSCode
+.vscode/
+
+# Git
+.git/
