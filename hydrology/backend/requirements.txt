@@ -1,0 +1,11 @@
+fastapi==0.95.2
+uvicorn[standard]==0.21.1
+pydantic==1.10.12
+python-dotenv==1.0.0
+langchain==0.0.327
+openai==1.8.5
+transformers==4.40.0
+torch==2.2.2
+sentence-transformers==2.2.2
+faiss-cpu==1.7.4
+requests==2.31.0
