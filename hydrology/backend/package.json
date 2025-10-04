@@ -1,0 +1,15 @@
+{
+  "name": "hydrology-agent-backend",
+  "version": "0.1.0",
+  "description": "简报助手后端（本地示例），提供 /api/briefing 简单问答接口",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "body-parser": "^1.20.2"
+  }
+}
