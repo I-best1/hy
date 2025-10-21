@@ -625,6 +625,11 @@
               effect:{ show:true, period:4.5, trailLength:0.6, color:'#b6d8ff', symbol:'arrow', symbolSize:6 },
               lineStyle:{ color:'#88b7ff', width:2.5, opacity:0.9, curveness:0.1 },
               data:(function(){ const arr=[]; for(let i=0;i<XISHANCUN_HE.length-1;i++){ arr.push({coords:[XISHANCUN_HE[i], XISHANCUN_HE[i+1]]}); } return arr })()
+            },
+            { name:'遇龙河', type:'lines', coordinateSystem:'geo', zlevel:6,
+              effect:{ show:true, period:4.5, trailLength:0.6, color:'#ff1493', symbol:'arrow', symbolSize:6 },
+              lineStyle:{ color:'#fce4ec', width:2.5, opacity:0.85, curveness:0.1 },
+              data:(function(){ const arr=[]; for(let i=0;i<YULONG_HE.length-1;i++){ arr.push({coords:[YULONG_HE[i], YULONG_HE[i+1]]}); } return arr })()
             }
           ]
         };
@@ -812,6 +817,7 @@
   </script>
 </body>
 </html>
+
 
 
 
