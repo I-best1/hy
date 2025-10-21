@@ -321,7 +321,14 @@
       [110.5721, 24.9313],
       [110.5501, 24.9559]
     ];
-
+//支流：遇龙河
+    const YULONG_HE = [
+      [110.3700, 23.9315],
+      [110.3732, 23.9382],
+      [110.3789, 23.9357],
+      [110.3799, 23.9313],
+      [110.3800, 23.9559]
+    ];
     let simTimer = null;
     let playing = false;
     let selectedStation = stations[0];
@@ -546,7 +553,19 @@
                 lineStyle: { color: '#88b7ff', width: 2.5, opacity: 0.9, curveness: 0.1 },
                 data: (function(){ const arr=[]; for(let i=0;i<XISHANCUN_HE.length-1;i++){ arr.push({coords:[XISHANCUN_HE[i], XISHANCUN_HE[i+1]]}); } return arr })()
               }
+            ,
+           //遇龙河
+            {
+                name: '遇龙河',
+                type: 'lines',
+                coordinateSystem: 'geo',
+                zlevel: 6,
+                effect: { show: true, period: 4.5, trailLength: 0.6, color: '#ff1493', symbol: 'arrow', symbolSize: 6 },
+                lineStyle: { color: '#fce4ec', width: 2.5, opacity: 0.85, curveness: 0.1 },
+                data: (function(){ const arr=[]; for(let i=0;i<YULONG_HE.length-1;i++){ arr.push({coords:[YULONG_HE[i], YULOMG_HE[i+1]]}); } return arr })()
+              }
           ]
+          
         };
         // 确保地图容器允许交互
         try{ mapChart.getDom().style.pointerEvents = 'auto'; }catch(e){}
@@ -793,6 +812,7 @@
   </script>
 </body>
 </html>
+
 
 
 
