@@ -293,6 +293,8 @@
 
     // 支流：兴坪河
     const XINGPING_HE = [
+      [110.5941, 25.1000],
+      [110.5900, 25.0380],
       [110.5800, 24.9700],
       [110.5700, 24.9650],
       [110.5600, 24.9600],
@@ -301,6 +303,8 @@
 
     // 支流：幸福源江
     const XINGFUYUAN_JIANG = [
+      [110.6331, 25.0221],
+      [110.6189, 25.0129],
       [110.6025, 24.9418],
       [110.5903, 24.9452],
       [110.5786, 24.9501],
@@ -311,13 +315,20 @@
 
     // 支流：西山村河
     const XISHANCUN_HE = [
-      [110.5287, 24.9315],
-      [110.5356, 24.9382],
-      [110.5412, 24.9457],
-      [110.5463, 24.9513],
+      [110.5887, 24.9315],
+      [110.5856, 24.9382],
+      [110.5778, 24.9357],
+      [110.5721, 24.9313],
       [110.5501, 24.9559]
     ];
-
+//支流：遇龙河
+    const YULONG_HE = [
+      [110.3000, 24.9320],
+      [110.3520, 24.8976],
+      [110.4200, 24.7890],
+      [110.4678, 24.6542],
+      [110.4980, 24.5600]
+    ];
     let simTimer = null;
     let playing = false;
     let selectedStation = stations[0];
@@ -542,7 +553,19 @@
                 lineStyle: { color: '#88b7ff', width: 2.5, opacity: 0.9, curveness: 0.1 },
                 data: (function(){ const arr=[]; for(let i=0;i<XISHANCUN_HE.length-1;i++){ arr.push({coords:[XISHANCUN_HE[i], XISHANCUN_HE[i+1]]}); } return arr })()
               }
+            ,
+           //遇龙河
+            {
+                name: '遇龙河',
+                type: 'lines',
+                coordinateSystem: 'geo',
+                zlevel: 6,
+                effect: { show: true, period: 4.5, trailLength: 0.6, color: '#ff1493', symbol: 'arrow', symbolSize: 6 },
+                lineStyle: { color: '#fce4ec', width: 2.5, opacity: 0.85, curveness: 0.1 },
+                data: (function(){ const arr=[]; for(let i=0;i<YULONG_HE.length-1;i++){ arr.push({coords:[YULONG_HE[i], YULOMG_HE[i+1]]}); } return arr })()
+              }
           ]
+          
         };
         // 确保地图容器允许交互
         try{ mapChart.getDom().style.pointerEvents = 'auto'; }catch(e){}
@@ -602,6 +625,11 @@
               effect:{ show:true, period:4.5, trailLength:0.6, color:'#b6d8ff', symbol:'arrow', symbolSize:6 },
               lineStyle:{ color:'#88b7ff', width:2.5, opacity:0.9, curveness:0.1 },
               data:(function(){ const arr=[]; for(let i=0;i<XISHANCUN_HE.length-1;i++){ arr.push({coords:[XISHANCUN_HE[i], XISHANCUN_HE[i+1]]}); } return arr })()
+            },
+            { name:'遇龙河', type:'lines', coordinateSystem:'geo', zlevel:6,
+              effect:{ show:true, period:4.5, trailLength:0.6, color:'#ff1493', symbol:'arrow', symbolSize:6 },
+              lineStyle:{ color:'#fce4ec', width:2.5, opacity:0.85, curveness:0.1 },
+              data:(function(){ const arr=[]; for(let i=0;i<YULONG_HE.length-1;i++){ arr.push({coords:[YULONG_HE[i], YULONG_HE[i+1]]}); } return arr })()
             }
           ]
         };
@@ -789,3 +817,14 @@
   </script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
