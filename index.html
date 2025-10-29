@@ -25,6 +25,29 @@
     table{width:100%;border-collapse:collapse;color:#bfefff}
     th,td{padding:6px 8px;border-bottom:1px dashed rgba(255,255,255,0.03);text-align:left;font-size:13px}
     .status-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+    
+    /* 模态窗口样式 */
+    .modal {display:none;position:fixed;z-index:1000;left:0;top:0;width:100%;height:100%;background-color:rgba(0,0,0,0.6);animation:fadeIn 0.3s}
+    .modal.show {display:flex;align-items:center;justify-content:center}
+    .modal-content {background:rgba(2,35,41,0.95);padding:20px;border-radius:8px;border:1px solid rgba(0,150,150,0.3);max-width:90%;max-height:90%;overflow-y:auto;position:relative;min-width:500px;box-shadow:0 4px 20px rgba(0,0,0,0.5)}
+    .modal-header {display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;border-bottom:1px solid rgba(0,150,150,0.2);padding-bottom:10px}
+    .modal-header h2 {margin:0;font-size:18px;color:#e8fdff}
+    .modal-close-btn {background:transparent;border:none;color:#9fead6;font-size:24px;cursor:pointer;padding:0;width:30px;height:30px;display:flex;align-items:center;justify-content:center}
+    .modal-close-btn:hover {color:#e8fdff}
+    .modal-body {color:#c9f3ff;white-space:pre-wrap;word-wrap:break-word;line-height:1.7;max-height:calc(90vh - 150px);overflow-y:auto}
+    .modal-footer {margin-top:15px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid rgba(0,150,150,0.2);padding-top:10px}
+    .modal-btn {padding:8px 16px;border-radius:4px;border:none;cursor:pointer;font-size:14px;transition:all 0.3s}
+    .modal-btn-primary {background:#0fbfc6;color:#012;font-weight:bold}
+    .modal-btn-primary:hover {background:#13d4d6;box-shadow:0 0 10px rgba(15,191,198,0.5)}
+    .modal-btn-secondary {background:rgba(15,191,198,0.2);color:#0fbfc6;border:1px solid #0fbfc6}
+    .modal-btn-secondary:hover {background:rgba(15,191,198,0.3)}
+    
+    /* 工具栏 */
+    .briefing-toolbar {display:flex;gap:8px;margin-bottom:10px}
+    .briefing-toolbar button {padding:6px 12px;border-radius:4px;background:#0fbfc6;color:#012;border:none;cursor:pointer;font-size:12px;transition:all 0.3s}
+    .briefing-toolbar button:hover {background:#13d4d6;box-shadow:0 0 8px rgba(15,191,198,0.4)}
+    
+    @keyframes fadeIn {from{opacity:0} to{opacity:1}}
   </style>
   <!-- 引入 ECharts CDN -->
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.2/dist/echarts.min.js"></script>
@@ -95,6 +118,10 @@
 
   <div class="card" id="briefingCard">
   <h3 style="display:flex;align-items:center;justify-content:space-between">简报生成 <button id="briefingGenerateBtn" style="padding:6px 12px;border-radius:4px;background:#0fbfc6;color:#012; border:none;cursor:pointer; font-size:13px;">生成简报</button></h3>
+  <div class="briefing-toolbar">
+    <button id="briefingEnlargeBtn" title="放大查看">🔍 放大</button>
+    <button id="briefingCopyBtn" title="复制到剪贴板">📋 复制</button>
+  </div>
   <div id="briefingText" style="white-space:pre-line;font-size:15px;line-height:1.7;margin-bottom:10px;">
     【桂林水文中心】8月15日8时信息：据水文监测，过去24小时，桂林市普降大到暴雨，恭城、全州、阳朔、临桂、永福、兴安、灵川等县（区）局部降大暴雨，日雨量较大的有恭城县西岭镇东面村165.5毫米、全州县石塘镇乐中村152.5毫米。受强降雨影响，恭城河、湘江全州县城河段等主要江河及永福县大邦河、灌阳县秀江、雁山区良丰河、恭城县西岭河及莲花河、临桂区四塘河及会仙河、阳朔县兴坪河、全州县炎井河、灵川县涧沙河等暴雨区中小河流出现了1～2.6米的涨水，均未超警。8时，漓江桂林水文站水位142.20米（警戒水位146.0米），流量154立方米每秒。预计未来24小时，漓江桂林市城区至阳朔县城河段水位将继续上涨1.5～2米，桂江平乐县城河段水位将继续上涨1米左右，不会超警；全州、恭城、永福、临桂、阳朔等县（区）部分中小河流可能出现超警洪水。
       </div>
@@ -814,6 +841,94 @@
         }
       };
     }
+  </script>
+
+  <!-- 简报/周报放大模态窗口 -->
+  <div id="briefingModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>简报详情</h2>
+        <button class="modal-close-btn" onclick="closeBriefingModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBriefingContent"></div>
+      <div class="modal-footer">
+        <button class="modal-btn modal-btn-secondary" onclick="copyModalContent()">复制内容</button>
+        <button class="modal-btn modal-btn-primary" onclick="closeBriefingModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 放大简报的函数
+    function openBriefingModal() {
+      const briefingText = document.getElementById('briefingText').innerText;
+      const modalContent = document.getElementById('modalBriefingContent');
+      modalContent.innerText = briefingText;
+      document.getElementById('briefingModal').classList.add('show');
+    }
+
+    // 关闭模态窗口
+    function closeBriefingModal() {
+      document.getElementById('briefingModal').classList.remove('show');
+    }
+
+    // 复制模态窗口中的内容
+    function copyModalContent() {
+      const modalContent = document.getElementById('modalBriefingContent').innerText;
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(modalContent).then(() => {
+          alert('已复制到剪贴板');
+        }).catch(err => {
+          console.error('复制失败:', err);
+          fallbackCopy(modalContent);
+        });
+      } else {
+        fallbackCopy(modalContent);
+      }
+    }
+
+    // 复制简报文本（直接复制）
+    function copyBriefingText() {
+      const briefingText = document.getElementById('briefingText').innerText;
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(briefingText).then(() => {
+          alert('已复制到剪贴板');
+        }).catch(err => {
+          console.error('复制失败:', err);
+          fallbackCopy(briefingText);
+        });
+      } else {
+        fallbackCopy(briefingText);
+      }
+    }
+
+    // 备用复制方法（针对不支持 Clipboard API 的浏览器）
+    function fallbackCopy(text) {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.opacity = '0';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        alert('已复制到剪贴板');
+      } catch (err) {
+        alert('复制失败，请手动复制');
+      }
+      document.body.removeChild(textArea);
+    }
+
+    // 关闭模态窗口时点击背景
+    document.getElementById('briefingModal').addEventListener('click', function(event) {
+      if (event.target === this) {
+        closeBriefingModal();
+      }
+    });
+
+    // 绑定放大和复制按钮
+    document.getElementById('briefingEnlargeBtn').addEventListener('click', openBriefingModal);
+    document.getElementById('briefingCopyBtn').addEventListener('click', copyBriefingText);
   </script>
 </body>
 </html>

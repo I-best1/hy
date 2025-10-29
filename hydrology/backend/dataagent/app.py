@@ -1,102 +1,45 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import Optional
+"""
+数据代理应用 - LangChain 版本
+导入并使用统一的 API 模块
+"""
+
+import sys
 import os
-from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
+# 添加父级目录到 Python 路径以导入 api 模块
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-app = FastAPI(title="Briefing Assistant (Dashscope/Qwen) - LangChain")
-
-# Allow CORS for local development (so browser frontend can call /api/briefing)
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-# Use DASHSCOPE_API_KEY to call Aliyun Dashscope (OpenAI-compatible) endpoint.
-# If not provided, fall back to simple keyword replies.
-DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
-DASHSCOPE_BASE_URL = os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-DASHSCOPE_MODEL = os.getenv("DASHSCOPE_MODEL", "qwen-plus")
+# 导入统一的 API 模块
+try:
+    from api import app as api_app
+    # 使用导入的 API 应用
+    app = api_app
+except ImportError as e:
+    # 如果导入失败，创建基础应用并给出提示
+    app = FastAPI(title="Data Agent - LangChain Version")
+    
+    # 配置 CORS 中间件
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    @app.get("/health")
+    async def health_check():
+        return {
+            "status": "error",
+            "message": f"统一API模块未找到: {str(e)}",
+            "detail": "请确保后端目录中有 api.py 文件"
+        }
 
-# Simple keyword fallback replies
-KEYWORD_REPLIES = {
-    "rain": "当前无持续暴雨，但请关注短时强降雨预报。",
-    "water": "当前大部分站点水位正常，少数站点有上升趋势，请注意警戒。",
-    "forecast": "未来24小时有小到中雨，局地有较强降雨过程，请注意。",
-    "flood": "短时未观测到广泛的洪水，但山区和窄峡处需注意山洪和泥石流风险。",
-}
 
-
-class Query(BaseModel):
-    q: str
-    top_k: Optional[int] = 3
-
-
-@app.post("/api/briefing")
-async def briefing(query: Query):
-    q = query.q.strip()
-
-    # If no DASHSCOPE key, use keyword fallback
-    if not DASHSCOPE_API_KEY:
-        q_low = q.lower()
-        for k, v in KEYWORD_REPLIES.items():
-            if k in q_low:
-                return {"reply": v, "source": "keyword-fallback"}
-        return {"reply": "抱歉，后端未配置外部 LLM（DASHSCOPE_API_KEY），请使用关键词（rain/water/forecast/flood）尝试。", "source": "keyword-fallback"}
-
-    # Use LangChain's ChatOpenAI to call the compatible LLM
-    try:
-        # Set environment variables expected by OpenAI client used by LangChain
-        os.environ.setdefault("OPENAI_API_KEY", DASHSCOPE_API_KEY)
-        # If a custom base URL is provided (Dashscope compatible), set OPENAI_API_BASE
-        if DASHSCOPE_BASE_URL:
-            os.environ.setdefault("OPENAI_API_BASE", DASHSCOPE_BASE_URL)
-
-        # Import langchain components
-        from langchain.chat_models import ChatOpenAI
-        from langchain.prompts import PromptTemplate
-        from langchain.chains import LLMChain
-
-        # Build a concise prompt template
-        template = (
-            "你是一个简洁且专业的水文/气象简报助手。\n"
-            "根据用户问题给出清晰、准确、面向公众的回答。\n"
-            "用户问题：{question}\n"
-            "请给出 1-3 句的简洁回答，必要时指出不确定性。"
-        )
-        prompt = PromptTemplate(input_variables=["question"], template=template)
-
-        # Create ChatOpenAI instance — rely on env vars for API key/base
-        llm = ChatOpenAI(model_name=DASHSCOPE_MODEL, temperature=0.0)
-        chain = LLMChain(llm=llm, prompt=prompt)
-
-        # Run chain
-        resp = chain.run(question=q)
-        return {"reply": resp, "source": "langchain-chatopenai"}
-    except Exception as e:
-        # Fallback: try lightweight openai client path (best-effort)
-        try:
-            from openai import OpenAI
-
-            client = OpenAI(api_key=DASHSCOPE_API_KEY, base_url=DASHSCOPE_BASE_URL)
-            messages = [
-                {"role": "system", "content": "你是一个简洁且专业的水文/气象简报助手。"},
-                {"role": "user", "content": q},
-            ]
-            completion = client.chat.completions.create(model=DASHSCOPE_MODEL, messages=messages)
-            comp = completion.model_dump() if hasattr(completion, "model_dump") else dict(completion)
-            choices = comp.get("choices") or []
-            if choices:
-                msg = choices[0].get("message") or {}
-                content = msg.get("content") or msg.get("delta", {}).get("content") or str(choices[0])
-            else:
-                content = str(comp)
-            return {"reply": content, "source": "dashscope-qwen"}
-        except Exception as e2:
-            return {"reply": f"调用 LLM 失败：{e}; 回退尝试也失败：{e2}", "source": "error"}
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=3002, reload=True)
