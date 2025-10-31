@@ -30,7 +30,7 @@ def predict(features_input):
     # 使用相同的标准化器进行标准化
     features_scaled = scaler_features.transform(features_array)
 
-    # 转换为PyTorch张量并调整形状为(1, 5, 3) <--> (样本数, 时间步长, 特征数)
+    # 转换为PyTorch张量并调整形状为(1, 3, 5) <--> (样本数, 时间步长, 特征数)
     input_tensor = torch.tensor(features_scaled, dtype=torch.float32).unsqueeze(0)
 
     # 进行预测

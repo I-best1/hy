@@ -3,7 +3,7 @@ from torch import nn
 
 
 class Net(nn.Module):
-    def __init__(self, input_size=5, hidden_size=64, num_layers=2, output_size=1, dropout=0.2):
+    def __init__(self, input_size=5, hidden_size=32, num_layers=2, output_size=1, dropout=0.2):
         super(Net, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers

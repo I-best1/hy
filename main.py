@@ -29,7 +29,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # 加载模型
 model = Net(input_size=input_size, hidden_size=hidden_size, 
             num_layers=num_layers, dropout=dropout_rate)
-state_dict = torch.load('./product/best_lstm_model.pth', map_location=device)
+state_dict = torch.load('./product/best_lstm_model.pth', map_location=device,weights_only=True)
 model.load_state_dict(state_dict)
 model.to(device)
 model.eval()  # 开启评估模式
