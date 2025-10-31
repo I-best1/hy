@@ -74,4 +74,4 @@ if __name__ == "__main__":
     # Start the FastAPI server
     # The reload option is removed for production use
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+    #http://127.0.0.1:8000/docs
