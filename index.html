@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>阳朔县洪水检测大屏</title>
+  <style>
+    html,body{height:100%;margin:0;background:#031824;font-family: "Microsoft Yahei", Arial, sans-serif;color:#c9f3ff}
+    .container{width:100%;height:100%;display:grid;grid-template-columns:300px 1fr 360px;grid-template-rows:80px 1fr;grid-template-areas:"header header header" "left main right"}
+    header{grid-area:header;padding:12px 24px;display:flex;align-items:center;justify-content:space-between}
+    header h1{margin:0;font-size:20px}
+    .left{grid-area:left;padding:12px 12px;overflow:auto}
+    .main{grid-area:main;padding:12px;position:relative}
+    .right{grid-area:right;padding:12px 12px;overflow:auto}
+    /* 卡片 */
+    .card{background:rgba(2,35,41,0.7);border-radius:6px;padding:12px;margin-bottom:12px;border:1px solid rgba(0,150,150,0.08)}
+  .card-header{display:flex;align-items:center;justify-content:space-between}
+  .collapse-btn{cursor:pointer;border:none;background:transparent;color:#9fead6;font-size:14px}
+  .card-body{margin-top:8px}
+  .card.collapsed .card-body{display:none}
+    .map-bg{width:100%;height:100%;background:#071f26;border-radius:6px;position:relative;overflow:hidden}
+    #mapCanvas{position:absolute;inset:8px;border-radius:6px}
+    .top-controls{position:absolute;left:50%;transform:translateX(-50%);top:12px;display:flex;gap:8px}
+    .legend{position:absolute;left:12px;bottom:12px;padding:8px;background:rgba(0,0,0,0.35);border-radius:4px}
+    table{width:100%;border-collapse:collapse;color:#bfefff}
+    th,td{padding:6px 8px;border-bottom:1px dashed rgba(255,255,255,0.03);text-align:left;font-size:13px}
+    .status-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+    
+    /* 模态窗口样式 */
+    .modal {display:none;position:fixed;z-index:1000;left:0;top:0;width:100%;height:100%;background-color:rgba(0,0,0,0.6);animation:fadeIn 0.3s}
+    .modal.show {display:flex;align-items:center;justify-content:center}
+    .modal-content {background:rgba(2,35,41,0.95);padding:20px;border-radius:8px;border:1px solid rgba(0,150,150,0.3);max-width:90%;max-height:90%;overflow-y:auto;position:relative;min-width:500px;box-shadow:0 4px 20px rgba(0,0,0,0.5)}
+    .modal-header {display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;border-bottom:1px solid rgba(0,150,150,0.2);padding-bottom:10px}
+    .modal-header h2 {margin:0;font-size:18px;color:#e8fdff}
+    .modal-close-btn {background:transparent;border:none;color:#9fead6;font-size:24px;cursor:pointer;padding:0;width:30px;height:30px;display:flex;align-items:center;justify-content:center}
+    .modal-close-btn:hover {color:#e8fdff}
+    .modal-body {color:#c9f3ff;white-space:pre-wrap;word-wrap:break-word;line-height:1.7;max-height:calc(90vh - 150px);overflow-y:auto}
+    .modal-footer {margin-top:15px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid rgba(0,150,150,0.2);padding-top:10px}
+    .modal-btn {padding:8px 16px;border-radius:4px;border:none;cursor:pointer;font-size:14px;transition:all 0.3s}
+    .modal-btn-primary {background:#0fbfc6;color:#012;font-weight:bold}
+    .modal-btn-primary:hover {background:#13d4d6;box-shadow:0 0 10px rgba(15,191,198,0.5)}
+    .modal-btn-secondary {background:rgba(15,191,198,0.2);color:#0fbfc6;border:1px solid #0fbfc6}
+    .modal-btn-secondary:hover {background:rgba(15,191,198,0.3)}
+    
+    /* 工具栏 */
+    .briefing-toolbar {display:flex;gap:8px;margin-bottom:10px}
+    .briefing-toolbar button {padding:6px 12px;border-radius:4px;background:#0fbfc6;color:#012;border:none;cursor:pointer;font-size:12px;transition:all 0.3s}
+    .briefing-toolbar button:hover {background:#13d4d6;box-shadow:0 0 8px rgba(15,191,198,0.4)}
+    
+    @keyframes fadeIn {from{opacity:0} to{opacity:1}}
+  </style>
+  <!-- 引入 ECharts CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.2/dist/echarts.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>阳朔县洪水预报管理系统</h1>
+      <div>
+        <span id="nowTime"></span>
+        <span id="selectedInfo" style="margin-left:16px;padding:6px 10px;background:rgba(11,82,96,0.6);border-radius:6px;color:#e8fdff;display:inline-block;min-width:200px;text-align:left">选中站点：<strong id="selName">-</strong> 水位：<span id="selLevel">-</span> m</span>
+      </div>
+    </header>
+    <aside class="left">
+      <div class="card" id="stationCard">
+        <div class="card-header">
+          <h3 style="margin:0">水文站列表</h3>
+          <button class="collapse-btn" onclick="toggleCard('stationCard')">▾</button>
+        </div>
+        <div class="card-body">
+          <table id="stationTable">
+            <thead><tr><th>站名</th><th>水位(m)</th><th>状态</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" id="rainCard">
+        <div class="card-header">
+          <h3 style="margin:0">实时降雨</h3>
+          <button class="collapse-btn" onclick="toggleCard('rainCard')">▾</button>
+        </div>
+        <div class="card-body">
+          <table id="rainTable"><thead><tr><th>站名</th><th>24h(mm)</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+      <div class="card" id="levelPercentCard">
+        <div class="card-header"><h3 style="margin:0">水位正常比例</h3></div>
+        <div class="card-body"><div id="levelPercentChart" style="width:100%;height:160px"></div></div>
+      </div>
+      <div class="card" id="weatherCard">
+        <h3>气象信息</h3>
+        <div id="weather">阳朔全域晴朗，无降雨</div>
+      </div>
+      <div class="card" id="briefingQA">
+        <h3 style="margin:0">智能助手</h3>
+        <div style="margin-bottom:8px;">
+          <input id="briefingInput" type="text" placeholder="向简报助手提问..." style="width:80%;padding:6px 8px;border-radius:4px;border:1px solid #0fbfc6;background:#031824;color:#c9f3ff;">
+          <button id="briefingAskBtn" style="padding:6px 16px;border-radius:4px;background:#0fbfc6;color:#fff;border:none;cursor:pointer;margin-left:8px;">提问</button>
+        </div>
+        <div id="briefingReply" style="min-height:32px;font-size:15px;color:#ffd86b;"></div>
+      </div>
+    </aside>
+    <main class="main">
+      <div class="map-bg card" id="mapCard">
+        <div class="top-controls">
+          <button id="playBtn">开始模拟</button>
+          <button id="pauseBtn">暂停</button>
+        </div>
+        <div id="mapCanvas"></div>
+        <div class="legend card" id="legend">图例：<div><span class="status-dot" style="background:#2ecc71"></span>正常 <span class="status-dot" style="background:#f1c40f;margin-left:12px"></span>警戒 <span class="status-dot" style="background:#e74c3c;margin-left:12px"></span>超警</div></div>
+      </div>
+    </main>
+    <aside class="right">
+      <div class="card">
+        <h3>选中站点水位</h3>
+        <div id="levelChart" style="width:100%;height:220px"></div>
+      </div>
+
+  <div class="card" id="briefingCard">
+  <h3 style="display:flex;align-items:center;justify-content:space-between">简报生成 <button id="briefingGenerateBtn" style="padding:6px 12px;border-radius:4px;background:#0fbfc6;color:#012; border:none;cursor:pointer; font-size:13px;">生成简报</button></h3>
+  <div class="briefing-toolbar">
+    <button id="briefingEnlargeBtn" title="放大查看">🔍 放大</button>
+    <button id="briefingCopyBtn" title="复制到剪贴板">📋 复制</button>
+  </div>
+  <div id="briefingText" style="white-space:pre-line;font-size:15px;line-height:1.7;margin-bottom:10px;">
+    【桂林水文中心】8月15日8时信息：据水文监测，过去24小时，桂林市普降大到暴雨，恭城、全州、阳朔、临桂、永福、兴安、灵川等县（区）局部降大暴雨，日雨量较大的有恭城县西岭镇东面村165.5毫米、全州县石塘镇乐中村152.5毫米。受强降雨影响，恭城河、湘江全州县城河段等主要江河及永福县大邦河、灌阳县秀江、雁山区良丰河、恭城县西岭河及莲花河、临桂区四塘河及会仙河、阳朔县兴坪河、全州县炎井河、灵川县涧沙河等暴雨区中小河流出现了1～2.6米的涨水，均未超警。8时，漓江桂林水文站水位142.20米（警戒水位146.0米），流量154立方米每秒。预计未来24小时，漓江桂林市城区至阳朔县城河段水位将继续上涨1.5～2米，桂江平乐县城河段水位将继续上涨1米左右，不会超警；全州、恭城、永福、临桂、阳朔等县（区）部分中小河流可能出现超警洪水。
+      </div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+  // 站点使用经纬度（示例位置基于阳朔县范围，可替换为真实经纬度）
+  // 如果无法通过 fetch 加载 GeoJSON（例如直接使用 file:// 打开），
+  // 下面内嵌的 YS_GEO 会作为回退使用，以确保地图能渲染。
+  const YS_GEO = {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"adcode":450321,"name":"阳朔县","center":[110.494699,24.77534],"centroid":[110.476659,24.850756],"childrenNum":0,"level":"district","acroutes":[100000,450000,450300],"parent":{"adcode":450300}},"geometry":{"type":"MultiPolygon","coordinates":[[[[110.610567,25.056975],[110.604754,25.056925],[110.60122,25.05598],[110.592891,25.054765],[110.585073,25.053101],[110.577497,25.053507],[110.56841,25.053444],[110.560606,25.051326],[110.556825,25.050382],[110.552337,25.044609],[110.550848,25.042534],[110.548857,25.040455],[110.547131,25.034932],[110.544651,25.031014],[110.540921,25.025706],[110.537153,25.023847],[110.534391,25.023139],[110.530587,25.024957],[110.52755,25.02724],[110.526249,25.030908],[110.524701,25.035491],[110.522902,25.039845],[110.519084,25.043957],[110.515527,25.046469],[110.511481,25.048281],[110.507449,25.048946],[110.504426,25.0487],[110.497243,25.048374],[110.490266,25.049514],[110.488572,25.049891],[110.486891,25.049776],[110.483887,25.050632],[110.482699,25.050018],[110.48096,25.049539],[110.479206,25.049492],[110.478411,25.049759],[110.476201,25.045037],[110.474804,25.041789],[110.473936,25.040141],[110.472475,25.038892],[110.470822,25.038667],[110.468644,25.039447],[110.467539,25.040455],[110.463621,25.045054],[110.462836,25.045486],[110.46142,25.045778],[110.460004,25.045782],[110.456598,25.0461],[110.456242,25.04679],[110.45636,25.047904],[110.455767,25.049378],[110.453657,25.051136],[110.450397,25.052935],[110.447616,25.054176],[110.445826,25.054735],[110.44447,25.054621],[110.442122,25.054202],[110.44009,25.053118],[110.438236,25.050636],[110.436396,25.04444],[110.43514,25.041759],[110.433588,25.04045],[110.432519,25.039904],[110.429629,25.040556],[110.426912,25.040082],[110.424208,25.038062],[110.414911,25.028252],[110.412687,25.024524],[110.410971,25.021267],[110.410943,25.018331],[110.411569,25.0136],[110.411578,25.011914],[110.41134,25.01074],[110.41034,25.009783],[110.409697,25.009486],[110.408569,25.009554],[110.40639,25.011015],[110.405623,25.01135],[110.405573,25.013341],[110.405071,25.015586],[110.404084,25.016476],[110.402737,25.016692],[110.400906,25.016573],[110.397367,25.014104],[110.395659,25.012202],[110.392486,25.010626],[110.388933,25.010943],[110.387458,25.012053],[110.387696,25.013727],[110.387317,25.016065],[110.385718,25.017171],[110.383266,25.017383],[110.382536,25.016934],[110.380339,25.015137],[110.378522,25.010893],[110.377184,25.009325],[110.375471,25.008647],[110.373143,25.008969],[110.370558,25.010511],[110.367124,25.011833],[110.365174,25.011719],[110.362179,25.010071],[110.359822,25.009359],[110.358859,25.00924],[110.356366,25.008635],[110.348726,25.009855],[110.343004,25.012303],[110.340365,25.013218],[110.338954,25.012943],[110.337835,25.01218],[110.336812,25.011109],[110.336525,25.010444],[110.336876,25.009071],[110.339091,25.00558],[110.340265,25.00439],[110.341635,25.003733],[110.342808,25.003517],[110.343635,25.004144],[110.343721,25.00583],[110.343913,25.006893],[110.345228,25.007258],[110.346986,25.006826],[110.348311,25.005767],[110.349539,25.004135],[110.350133,25.00272],[110.350434,25.000945],[110.349658,24.999835],[110.348347,24.999073],[110.347475,24.999162],[110.346237,24.998128],[110.345397,24.996204],[110.343036,24.995039],[110.342393,24.994895],[110.342292,24.993853],[110.341808,24.991599],[110.341927,24.990573],[110.343808,24.987646],[110.344767,24.985548],[110.344776,24.983921],[110.34384,24.982095],[110.340794,24.980739],[110.325967,24.98026],[110.323342,24.979192],[110.321145,24.977167],[110.310652,24.972315],[110.309186,24.971065],[110.308149,24.969047],[110.308688,24.966661],[110.310697,24.964377],[110.317022,24.961207],[110.320191,24.957986],[110.322725,24.954286],[110.327077,24.943932],[110.328671,24.938892],[110.329575,24.936925],[110.33299,24.931194],[110.338392,24.923606],[110.341552,24.916801],[110.3411,24.908775],[110.338575,24.904523],[110.336625,24.901389],[110.332442,24.899049],[110.327054,24.897904],[110.320163,24.896831],[110.317191,24.897879],[110.312907,24.898298],[110.308802,24.897327],[110.304131,24.895466],[110.301496,24.893511],[110.301359,24.890992],[110.302985,24.888393],[110.306715,24.882714],[110.309515,24.878681],[110.310428,24.876803],[110.310515,24.873813],[110.310113,24.871302],[110.308177,24.868401],[110.304026,24.866518],[110.297076,24.864525],[110.294016,24.863969],[110.291948,24.863146],[110.289833,24.861628],[110.28761,24.858052],[110.286628,24.853959],[110.283463,24.847206],[110.280966,24.84318],[110.27802,24.840325],[110.274162,24.83912],[110.270317,24.83814],[110.265833,24.83926],[110.259111,24.841174],[110.25259,24.841929],[110.246339,24.841432],[110.242759,24.840346],[110.234251,24.83691],[110.231251,24.835332],[110.22889,24.833177],[110.22668,24.830165],[110.226991,24.83002],[110.228872,24.827861],[110.229653,24.825129],[110.229964,24.822825],[110.229644,24.820814],[110.229799,24.818514],[110.230895,24.816931],[110.231831,24.815349],[110.231196,24.81262],[110.231977,24.810316],[110.231964,24.803561],[110.232585,24.801978],[110.236512,24.799674],[110.237137,24.798091],[110.236818,24.796368],[110.235713,24.794501],[110.235398,24.793206],[110.235393,24.792196],[110.235854,24.790329],[110.236799,24.788462],[110.23821,24.786013],[110.240411,24.784858],[110.241827,24.78457],[110.242612,24.783997],[110.243078,24.783275],[110.242918,24.781697],[110.241973,24.780546],[110.240243,24.779256],[110.238973,24.777817],[110.236923,24.775232],[110.236283,24.772215],[110.234703,24.769057],[110.233439,24.767473],[110.232018,24.765899],[110.230128,24.763025],[110.229338,24.761301],[110.229594,24.759145],[110.230534,24.757001],[110.232247,24.755715],[110.235544,24.754993],[110.238201,24.753991],[110.239927,24.752701],[110.24243,24.749131],[110.243992,24.748129],[110.245877,24.748124],[110.249019,24.748982],[110.252001,24.749975],[110.254038,24.750549],[110.256709,24.751117],[110.259709,24.751627],[110.260983,24.750735],[110.261476,24.749682],[110.26112,24.748625],[110.260458,24.747513],[110.260522,24.746957],[110.261252,24.746295],[110.26223,24.746078],[110.263992,24.746142],[110.265029,24.745925],[110.265216,24.745314],[110.264262,24.742644],[110.264568,24.741977],[110.265664,24.74154],[110.268705,24.742444],[110.271011,24.743624],[110.272162,24.744355],[110.273504,24.744469],[110.274965,24.744367],[110.27534,24.744121],[110.277746,24.739374],[110.278874,24.736768],[110.279838,24.735252],[110.28255,24.733452],[110.283436,24.732292],[110.283377,24.728373],[110.284582,24.726785],[110.286258,24.725197],[110.287934,24.724701],[110.289285,24.725214],[110.289911,24.727108],[110.290286,24.731609],[110.291153,24.732484],[110.292824,24.732713],[110.294021,24.732284],[110.295299,24.731278],[110.299318,24.724985],[110.30251,24.722972],[110.305629,24.720815],[110.307711,24.718794],[110.309784,24.717792],[110.317903,24.718862],[110.319889,24.719962],[110.320766,24.720662],[110.322492,24.723546],[110.324547,24.725686],[110.326917,24.727112],[110.329282,24.726968],[110.331808,24.72625],[110.333059,24.725393],[110.334634,24.723822],[110.336844,24.723962],[110.34047,24.723388],[110.342361,24.721957],[110.344868,24.718382],[110.345493,24.716811],[110.346443,24.716667],[110.350388,24.718662],[110.353393,24.719231],[110.357804,24.718654],[110.362681,24.71665],[110.366772,24.713787],[110.368517,24.711418],[110.370837,24.709456],[110.373654,24.705349],[110.373713,24.70007],[110.372992,24.696617],[110.371028,24.691542],[110.369855,24.683493],[110.36991,24.677292],[110.370955,24.674318],[110.373252,24.672738],[110.377033,24.672547],[110.380814,24.672819],[110.385586,24.674475],[110.39086,24.676366],[110.395911,24.676183],[110.400198,24.67462],[110.403998,24.673048],[110.409066,24.670342],[110.413619,24.669463],[110.416879,24.669955],[110.422921,24.670236],[110.428725,24.669136],[110.431734,24.669849],[110.433478,24.671238],[110.434213,24.673316],[110.435958,24.674938],[110.440223,24.676344],[110.44299,24.675907],[110.445511,24.67524],[110.448552,24.672734],[110.451611,24.668622],[110.454904,24.665656],[110.459219,24.662245],[110.465005,24.660903],[110.470055,24.659331],[110.472557,24.659577],[110.478576,24.660529],[110.486608,24.66058],[110.495394,24.661319],[110.503928,24.661599],[110.513185,24.665325],[110.518687,24.667194],[110.523486,24.664463],[110.525034,24.659879],[110.525062,24.657585],[110.526089,24.654836],[110.528619,24.652554],[110.533414,24.650281],[110.538195,24.648934],[110.541496,24.646198],[110.546547,24.643011],[110.55588,24.641414],[110.561209,24.641665],[110.563693,24.641082],[110.565255,24.639786],[110.567319,24.637522],[110.568675,24.635767],[110.570452,24.633825],[110.570895,24.633583],[110.571831,24.633901],[110.574817,24.635176],[110.578438,24.637165],[110.580794,24.638584],[110.582525,24.638869],[110.583968,24.638202],[110.585091,24.639668],[110.587502,24.640777],[110.590475,24.64152],[110.591407,24.641626],[110.591959,24.641979],[110.597937,24.643674],[110.599827,24.645098],[110.601416,24.647384],[110.604097,24.649954],[110.609818,24.656157],[110.611024,24.656773],[110.611376,24.658124],[110.612713,24.659704],[110.614248,24.66106],[110.616097,24.662971],[110.618444,24.664628],[110.619558,24.665707],[110.619024,24.666642],[110.617727,24.667606],[110.617024,24.66787],[110.615019,24.667942],[110.609722,24.668367],[110.608805,24.668524],[110.607284,24.66945],[110.606485,24.670444],[110.60606,24.671247],[110.605594,24.672683],[110.605289,24.675363],[110.604348,24.678005],[110.603978,24.682839],[110.604115,24.685349],[110.605138,24.687299],[110.605247,24.690667],[110.604914,24.693589],[110.60433,24.695216],[110.602572,24.701204],[110.602211,24.705056],[110.601887,24.706029],[110.599813,24.707749],[110.598603,24.708513],[110.598101,24.709452],[110.597982,24.710713],[110.597562,24.712293],[110.59706,24.713286],[110.593672,24.715987],[110.592051,24.717478],[110.591283,24.718896],[110.590767,24.721924],[110.590343,24.723185],[110.590174,24.727168],[110.590603,24.728717],[110.590334,24.729685],[110.588799,24.731452],[110.587475,24.73391],[110.587594,24.734173],[110.589174,24.735596],[110.592315,24.736729],[110.597051,24.73875],[110.59764,24.739676],[110.601645,24.74269],[110.610211,24.743217],[110.620043,24.744452],[110.629874,24.746605],[110.638687,24.749441],[110.648751,24.754352],[110.656272,24.761314],[110.660743,24.771005],[110.66272,24.776073],[110.662921,24.782507],[110.661094,24.789149],[110.658519,24.795787],[110.654665,24.80379],[110.653112,24.807677],[110.652304,24.813643],[110.652752,24.820996],[110.653436,24.829269],[110.653884,24.837313],[110.655103,24.84307],[110.657049,24.851354],[110.660802,24.857132],[110.666076,24.860627],[110.673145,24.86368],[110.67615,24.867379],[110.678141,24.871077],[110.679118,24.87545],[110.67904,24.885094],[110.680118,24.889309],[110.6811,24.893452],[110.683314,24.901737],[110.682776,24.90518],[110.679693,24.911124],[110.674611,24.914296],[110.672565,24.916343],[110.669492,24.919989],[110.668437,24.925259],[110.668168,24.928248],[110.665601,24.932584],[110.662528,24.936921],[110.660231,24.939197],[110.654368,24.944885],[110.653071,24.948085],[110.652523,24.953133],[110.652236,24.957723],[110.651436,24.962771],[110.650619,24.969196],[110.649076,24.972857],[110.647276,24.975366],[110.64498,24.978332],[110.643153,24.984057],[110.642372,24.988184],[110.643596,24.993018],[110.643317,24.995082],[110.64203,24.998056],[110.637436,25.002149],[110.634888,25.005114],[110.632061,25.009452],[110.630522,25.012655],[110.629732,25.015633],[110.631988,25.018869],[110.633984,25.021877],[110.634719,25.025096],[110.634189,25.028764],[110.631376,25.030806],[110.629344,25.032394],[110.626787,25.035588],[110.624472,25.039476],[110.621134,25.044728],[110.620842,25.050238],[110.618526,25.054811],[110.616225,25.05778],[110.610567,25.056975]]]]}}]};
+  
+  // Helper: 点是否在闭合环内（射线法）
+  function pointInRing(lon, lat, ring){
+    let inside = false;
+    for(let i=0, j=ring.length-1; i<ring.length; j=i++){
+      const xi = ring[i][0], yi = ring[i][1];
+      const xj = ring[j][0], yj = ring[j][1];
+      const intersect = ((yi>lat) !== (yj>lat)) && (lon < (xj-xi)*(lat-yi)/(yj-yi) + xi);
+      if(intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function pointInMultiPolygon(lon, lat, multi){
+    if(!multi || !multi.length) return false;
+    for(const polygon of multi){
+      // polygon is array of rings; first ring is outer
+      const outer = polygon[0];
+      if(pointInRing(lon, lat, outer)) return true;
+    }
+    return false;
+  }
+
+  function calcGeoCenter(geo){
+    try{
+      let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+      function scanCoords(coords){
+        if(!coords) return;
+        if(typeof coords[0]==='number' && typeof coords[1]==='number'){
+          const x=coords[0], y=coords[1];
+          if(isFinite(x)&&isFinite(y)){ minx=Math.min(minx,x); miny=Math.min(miny,y); maxx=Math.max(maxx,x); maxy=Math.max(maxy,y); }
+          return;
+        }
+        for(const c of coords) scanCoords(c);
+      }
+      for(const f of geo.features||[]) scanCoords(f.geometry && f.geometry.coordinates);
+      if(isFinite(minx) && isFinite(miny) && isFinite(maxx) && isFinite(maxy)) return [(minx+maxx)/2,(miny+maxy)/2];
+    }catch(e){}
+    return [110.494699,24.77534];
+  }
+
+  function ensureStationsInside(){
+    const feat = (YS_GEO && YS_GEO.features && YS_GEO.features[0]) ? YS_GEO.features[0] : null;
+    if(!feat) return;
+    const geo = feat.geometry;
+    const center = (feat.properties && feat.properties.center) ? feat.properties.center : calcGeoCenter(YS_GEO);
+    // 计算边界盒
+    let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+    function scan(coords){
+      if(!coords) return;
+      if(typeof coords[0]==='number' && typeof coords[1]==='number'){
+        minx = Math.min(minx, coords[0]); miny = Math.min(miny, coords[1]); maxx = Math.max(maxx, coords[0]); maxy = Math.max(maxy, coords[1]);
+        return;
+      }
+      for(const c of coords) scan(c);
+    }
+    for(const f of YS_GEO.features || []) scan(f.geometry && f.geometry.coordinates);
+    if(!isFinite(minx) || !isFinite(miny)){
+      minx = center[0]-0.1; maxx = center[0]+0.1; miny = center[1]-0.1; maxy = center[1]+0.1;
+    }
+
+    function randBetween(a,b){ return a + Math.random()*(b-a); }
+    // 近似球面距离（米）——haversine
+    function haversine(lon1,lat1,lon2,lat2){
+      const toRad = Math.PI/180;
+      const R = 6371000;
+      const dLat = (lat2-lat1)*toRad; const dLon = (lon2-lon1)*toRad;
+      const a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(lat1*toRad)*Math.cos(lat2*toRad)*Math.sin(dLon/2)*Math.sin(dLon/2);
+      const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R*c;
+    }
+
+    // 已放置的有效站点坐标
+    function placedCoords(){ return stations.filter(s=>Array.isArray(s.coord)&&s.coord.length>=2).map(s=>({lon:s.coord[0],lat:s.coord[1]})); }
+
+    const existing = placedCoords();
+    const minDistMeters = 2200; // 最小间距约 2.2km
+
+    for(let i=0;i<stations.length;i++){
+      const s = stations[i];
+      const hasCoord = s.coord && Array.isArray(s.coord) && s.coord.length>=2 && isFinite(s.coord[0]) && isFinite(s.coord[1]);
+      let inside = false;
+      if(hasCoord){
+        const lon = s.coord[0], lat = s.coord[1];
+        if(geo.type==='MultiPolygon') inside = pointInMultiPolygon(lon, lat, geo.coordinates);
+        else if(geo.type==='Polygon') inside = pointInRing(lon, lat, geo.coordinates[0]);
+      }
+      // 对于已有且在县域内的站点，保留。但若距离过近也会考虑重新放置
+      if(hasCoord && inside){
+        // 检查与已存在的坐标是否过近（跳过自身）
+        let tooClose = false;
+        for(const p of existing){
+          if(Math.abs(p.lon - s.coord[0])<1e-6 && Math.abs(p.lat - s.coord[1])<1e-6) continue;
+          if(haversine(p.lon,p.lat,s.coord[0],s.coord[1]) < minDistMeters){ tooClose = true; break; }
+        }
+        if(!tooClose){ existing.push({lon:s.coord[0],lat:s.coord[1]}); continue; }
+      }
+
+      // 否则通过随机采样在县域内寻找合适位置，并确保与其他站点保持最小距离
+      let placed = false;
+      const maxAttempts = 300;
+      for(let attempt=0; attempt<maxAttempts; attempt++){
+        const rl = randBetween(minx, maxx);
+        const rt = randBetween(miny, maxy);
+        // 先判断点是否在多边形内
+        let ok = false;
+        if(geo.type==='MultiPolygon') ok = pointInMultiPolygon(rl, rt, geo.coordinates);
+        else if(geo.type==='Polygon') ok = pointInRing(rl, rt, geo.coordinates[0]);
+        if(!ok) continue;
+        // 检查与已放置站点的距离
+        let tooClose = false;
+        for(const p of existing){ if(haversine(p.lon,p.lat,rl,rt) < minDistMeters){ tooClose = true; break; } }
+        if(tooClose) continue;
+        // 通过，放置
+        s.coord = [Number(rl.toFixed(6)), Number(rt.toFixed(6))];
+        existing.push({lon:s.coord[0],lat:s.coord[1]});
+        placed = true; break;
+      }
+      if(!placed){
+        // 退化为在中心附近网格放置（避免无限失败）
+        const col = i % 6; const row = Math.floor(i/6);
+        const dx = (col - 2.5) * 0.02; // lon jitter
+        const dy = (row - 2) * 0.015;   // lat jitter
+        s.coord = [Number((center[0]+dx).toFixed(6)), Number((center[1]+dy).toFixed(6))];
+        existing.push({lon:s.coord[0],lat:s.coord[1]});
+      }
+    }
+  }
+    const stations = [
+      // 12 个靠河站（示意放置在漓江或支流附近）
+      {id:1, name:'古洞塘', addr:'广西桂林市阳朔县金宝乡古洞塘村', coord:[110.3800,25.0500], type:'雨量站', level:0},
+      {id:2, name:'龙潭', addr:'广西桂林市阳朔县高田镇龙潭村', coord:[110.4200,24.9800], type:'水位站', level:0},
+      {id:3, name:'兴坪', addr:'广西桂林市阳朔县兴坪镇兴坪村', coord:[110.5531,24.9591], type:'雨量站', level:0},
+      {id:4, name:'龙头山码头', addr:'广西桂林市阳朔县阳朔镇龙头山码头', coord:[110.4947,24.7753], type:'水位站', level:0},
+      {id:5, name:'江村', addr:'广西桂林市阳朔县兴坪镇江村', coord:[110.5300,24.7200], type:'水位站', level:0},
+      {id:6, name:'幸福源水库', addr:'广西桂林市阳朔县兴坪镇幸福源水库', coord:[110.5650,24.9550], type:'水库', level:0},
+      {id:7, name:'金宝', addr:'广西桂林市阳朔县金宝乡金宝村', coord:[110.4600,24.7900], type:'雨量站', level:0},
+      {id:8, name:'观桥', addr:'广西桂林市阳朔县白沙镇观桥村', coord:[110.4900,24.8000], type:'雨量站', level:0},
+      {id:9, name:'仁和', addr:'广西桂林市阳朔县高田镇仁和村', coord:[110.5000,24.8200], type:'雨量站', level:0},
+      {id:10, name:'笔架山', addr:'广西桂林市阳朔县白沙镇笔架山村', coord:[110.3500,25.0100], type:'雨量站', level:0},
+      {id:11, name:'半边月', addr:'广西桂林市阳朔县福利镇半边月村', coord:[110.4500,24.7450], type:'雨量站', level:0},
+      {id:12, name:'兴隆', addr:'广西桂林市阳朔县白沙镇兴隆村', coord:[110.3420,24.9950], type:'雨量站', level:0},
+
+      // 其余站点：coord:null 由 ensureStationsInside() 在 init() 时分配到阳朔县域内，近似均匀分布
+      {id:13, name:'界底', addr:'广西桂林市阳朔县高田镇界底村', coord:null, type:'雨量站', level:0},
+      {id:14, name:'夏梁寨', addr:'广西桂林市阳朔县白沙镇夏梁寨村', coord:null, type:'雨量站', level:0},
+      {id:15, name:'雷吉村', addr:'广西桂林市阳朔县金宝乡雷吉村', coord:null, type:'雨量站', level:0},
+      {id:16, name:'高田村', addr:'广西桂林市阳朔县高田镇高田街', coord:null, type:'雨量站', level:0},
+      {id:17, name:'山把岭', addr:'广西桂林市阳朔县金宝乡山把岭村', coord:null, type:'雨量站', level:0},
+      {id:18, name:'白沙', addr:'广西桂林市阳朔县白沙镇白沙村', coord:null, type:'雨量站', level:0},
+      {id:19, name:'思和', addr:'广西桂林市阳朔县高田镇思和村', coord:null, type:'雨量站', level:0},
+      {id:20, name:'葡萄', addr:'广西桂林市阳朔县葡萄镇葡萄街', coord:null, type:'雨量站', level:0},
+      {id:21, name:'阳朔站', addr:'广西桂林市阳朔县阳朔镇木山寨村', coord:null, type:'水文站', level:0},
+      {id:22, name:'毛家', addr:'广西桂林市阳朔县金宝乡毛家村', coord:null, type:'雨量站', level:0},
+      {id:23, name:'富马桥', addr:'广西桂林市阳朔县白沙镇富马桥村', coord:null, type:'雨量站', level:0},
+      {id:24, name:'龙胜', addr:'广西桂林市阳朔县福利镇龙胜村', coord:null, type:'雨量站', level:0},
+      {id:25, name:'鸟屿门', addr:'广西桂林市阳朔县兴坪镇鸟屿门村', coord:null, type:'雨量站', level:0},
+      {id:26, name:'大水田', addr:'广西桂林市阳朔县某乡大水田村', coord:null, type:'雨量站', level:0},
+      {id:27, name:'官厅岭', addr:'广西桂林市阳朔县兴坪镇官厅岭村', coord:null, type:'雨量站', level:0},
+      {id:28, name:'毛家桥', addr:'广西桂林市阳朔县毛家桥村', coord:null, type:'雨量站', level:0},
+      {id:29, name:'砬江', addr:'广西桂林市阳朔县金宝乡砬江村', coord:null, type:'雨量站', level:0},
+      {id:30, name:'江村2', addr:'广西桂林市阳朔县兴坪镇江村(补充)', coord:null, type:'水位站', level:0},
+      {id:31, name:'龙岩门', addr:'广西桂林市阳朔县高田镇龙岩门村', coord:null, type:'水位站', level:0},
+      {id:32, name:'宣马桥', addr:'广西桂林市阳朔县白沙镇宣马桥村', coord:null, type:'雨量站', level:0},
+      {id:33, name:'补站1', addr:'广西桂林市阳朔县补充站1', coord:null, type:'雨量站', level:0}
+    ];
+
+    // 漓江阳朔段（LineString）坐标序列（经度, 纬度）
+    const LIJIANG_COORDS = [
+      [110.3800, 25.0500], // 草坪（起点，地图顶部漓江上游入口）
+      [110.4200, 24.9800], // 杨堤乡（漓江进入阳朔县的北入口）
+      [110.4500, 24.9700], // 下龙风光段
+      [110.5531, 24.9591], // 兴坪镇（20元人民币背景核心段）
+      [110.5300, 24.9000], // 黄布倒影段
+      [110.4800, 24.8500], // 阳朔县城北段
+      [110.4600, 24.7900], // 阳朔县城（碧莲峰沿岸）
+      [110.4900, 24.7700], // 福利镇北段
+      [110.5000, 24.7500], // 福利镇沿岸
+      [110.5300, 24.7200], // 留公村段
+      [110.5500, 24.6800], // 普益乡（阳朔县南端出口）
+      [110.6000, 24.6000], // 下游过渡段（普益至平乐）
+      // [110.6500, 24.5000]  // 平乐（终点，漓江汇入桂江处）
+    ];
+
+    // 支流：兴坪河
+    const XINGPING_HE = [
+      [110.5941, 25.1000],
+      [110.5900, 25.0380],
+      [110.5800, 24.9700],
+      [110.5700, 24.9650],
+      [110.5600, 24.9600],
+      [110.5531, 24.9591],
+    ];
+
+    // 支流：幸福源江
+    const XINGFUYUAN_JIANG = [
+      [110.6331, 25.0221],
+      [110.6189, 25.0129],
+      [110.6025, 24.9418],
+      [110.5903, 24.9452],
+      [110.5786, 24.9501],
+      [110.5672, 24.9536],
+      [110.5589, 24.9568],
+      [110.5552, 24.9587]
+    ];
+
+    // 支流：西山村河
+    const XISHANCUN_HE = [
+      [110.5887, 24.9315],
+      [110.5856, 24.9382],
+      [110.5778, 24.9357],
+      [110.5721, 24.9313],
+      [110.5501, 24.9559]
+    ];
+//支流：遇龙河
+    const YULONG_HE = [
+      [110.3000, 24.9320],
+      [110.3520, 24.8976],
+      [110.4200, 24.7890],
+      [110.4678, 24.6542],
+      [110.4980, 24.5600]
+    ];
+    let simTimer = null;
+    let playing = false;
+    let selectedStation = stations[0];
+
+    function init(){
+      // 放置站点到县域内（若 coord 为 null，将由 ensureStationsInside 调整）
+      try{ ensureStationsInside(); }catch(e){ console.warn('ensureStationsInside 错误', e); }
+  // 为每个站点生成初始随机水位（0 - 1.8 m）
+  stations.forEach(s=>{ s.level = Number((Math.random()*1.8).toFixed(2)); });
+  try{ if(typeof pushDebug==='function') pushDebug('已为所有站点生成初始水位'); }catch(e){}
+      document.getElementById('nowTime').innerText = new Date().toLocaleString();
+      setInterval(()=>document.getElementById('nowTime').innerText=new Date().toLocaleString(),1000);
+      renderStationTable();
+      initMapCanvas();
+      initLevelChart();
+      initLevelPercentChart();
+      bindControls();
+      // 更新地图数据以反映站点位置和初始水位
+      try{ updateMapData(); }catch(e){ console.warn('updateMapData 错误', e); }
+    }
+
+    function renderStationTable(){
+      const tbody = document.querySelector('#stationTable tbody');
+      tbody.innerHTML = '';
+      stations.forEach(s=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${s.name}</td><td>${s.level.toFixed(2)}</td><td><span class='status-dot' style='background:${statusColor(s.level)}'></span></td>`;
+        tr.onclick = ()=>{ selectedStation = s; updateLevelChart(); updateSelectedHeader(s); }
+        tbody.appendChild(tr);
+      })
+      const rtb = document.querySelector('#rainTable tbody');
+      rtb.innerHTML='';
+      stations.forEach(s=>{ const rtr=document.createElement('tr'); rtr.innerHTML=`<td>${s.name}</td><td>${(Math.random()*20).toFixed(1)}</td>`; rtb.appendChild(rtr) })
+      try{ updateLevelPercentChart(); }catch(e){}
+    }
+
+    function updateSelectedHeader(sOrName){
+      try{
+        if(!sOrName) return;
+        let s = null;
+        if(typeof sOrName === 'string'){
+          s = stations.find(ss=>ss.name === sOrName);
+        } else {
+          s = sOrName;
+        }
+        if(!s) return;
+        // 保持 selectedStation 同步
+        selectedStation = s;
+        document.getElementById('selName').innerText = s.name;
+        document.getElementById('selLevel').innerText = (s.level||0).toFixed(2);
+      }catch(e){}
+    }
+
+    function statusColor(level){
+      if(level>1.4) return '#e74c3c';
+      if(level>1.1) return '#f1c40f';
+      return '#2ecc71';
+    }
+
+    // 折叠逻辑：切换卡片的 collapsed 类并在 localStorage 中保存状态
+    function toggleCard(id){
+      try{
+        const el = document.getElementById(id);
+        if(!el) return;
+        el.classList.toggle('collapsed');
+        const collapsed = el.classList.contains('collapsed');
+        localStorage.setItem('card_collapsed_'+id, collapsed? '1':'0');
+        // 更新按钮符号
+        const btn = el.querySelector('.collapse-btn');
+        if(btn) btn.textContent = collapsed ? '▸' : '▾';
+      }catch(e){ }
+    }
+
+    function restoreCardStates(){
+      ['stationCard','rainCard'].forEach(id=>{
+        try{
+          const el = document.getElementById(id);
+          if(!el) return;
+          const val = localStorage.getItem('card_collapsed_'+id);
+          const collapsed = val === '1';
+          if(collapsed) el.classList.add('collapsed');
+          const btn = el.querySelector('.collapse-btn');
+          if(btn) btn.textContent = collapsed ? '▸' : '▾';
+        }catch(e){}
+      })
+    }
+
+    // 使用 ECharts 地图：优先渲染桂林市底图并对阳朔县加深（需要同目录下有 桂林市.json）；
+    // 若缺失则回退到阳朔县边界（同目录下的 阳朔县.json 或内嵌 YS_GEO）。
+    let mapChart = null;
+    function initMapCanvas(){
+      const el = document.getElementById('mapCanvas');
+      el.style.left = '0'; el.style.top = '0'; el.style.right='0'; el.style.bottom='0';
+      el.style.position='absolute';
+      // 创建 echarts 实例
+      mapChart = echarts.init(el);
+      // 载入 GeoJSON 并注册为地图
+      // 工具：计算任意 GeoJSON 的近似中心（扫描所有坐标的包围盒中心）
+      function calcCenter(geo){
+        try{
+          let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+          function scanCoords(coords){
+            if(!coords) return;
+            if(typeof coords[0]==='number' && typeof coords[1]==='number'){
+              const x=coords[0], y=coords[1];
+              if(isFinite(x)&&isFinite(y)){ minx=Math.min(minx,x); miny=Math.min(miny,y); maxx=Math.max(maxx,x); maxy=Math.max(maxy,y); }
+              return;
+            }
+            for(const c of coords){ scanCoords(c); }
+          }
+          for(const f of geo.features||[]){ scanCoords(f.geometry && f.geometry.coordinates); }
+          if(isFinite(minx)&&isFinite(miny)&&isFinite(maxx)&&isFinite(maxy)){
+            return [(minx+maxx)/2,(miny+maxy)/2];
+          }
+        }catch(e){}
+        return [110.494699,24.77534];
+      }
+
+      // 使用桂林市底图：高亮阳朔县
+      const useCity = (cityGeo)=>{
+        // 1) 侦测 GeoJSON 使用的名称字段，常见：name | NAME_CHN | NAME | fullname | NAME_ZH
+        function detectNameKey(geo){
+          const keys = ['name','NAME_CHN','NAME','fullname','NAME_ZH','Name'];
+          const feats = geo && geo.features || [];
+          for(const k of keys){
+            if(feats.some(f=>f && f.properties && typeof f.properties[k]==='string' && f.properties[k].length>0)){
+              return k;
+            }
+          }
+          return 'name';
+        }
+        const nameKey = detectNameKey(cityGeo);
+        // 2) 在注册时告知 ECharts 用哪个属性作为区域名称
+        echarts.registerMap('guilin', cityGeo, { nameProperty: nameKey });
+        // 3) 查找“阳朔”对应的区域名（若名称英文化则匹配 yangshuo）
+        function findYangshuoName(geo, k){
+          const feats = geo && geo.features || [];
+          const target = feats.find(f=>{
+            const val = f && f.properties && f.properties[k];
+            if(typeof val !== 'string') return false;
+            const s = val.toLowerCase();
+            return s.includes('阳朔') || s.includes('yangshuo');
+          });
+          return target && target.properties && target.properties[k];
+        }
+        const yangshuoName = findYangshuoName(cityGeo, nameKey) || '阳朔县';
+
+        const center = (cityGeo.features && cityGeo.features[0] && cityGeo.features[0].properties && cityGeo.features[0].properties.center) ? cityGeo.features[0].properties.center : calcCenter(cityGeo);
+        const option = {
+          tooltip:{trigger:'item',formatter: function(params){ if(params.seriesType==='scatter'){ return params.name + '<br/>水位: ' + (params.value[2]||'--') + ' m' } return params.name;}},
+          geo:{ map:'guilin', roam:true, label:{show:false},
+            itemStyle:{areaColor:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#0b5260'},{offset:1,color:'#04282d'}]},borderColor:'#0fbfc6',borderWidth:1,shadowColor:'rgba(0,0,0,0.5)',shadowBlur:20,opacity:0.95},
+            // 初始中心与缩放
+            center:center, zoom:6,
+            // 对特定区县加深样式：阳朔县（加深填充、加粗描边，并显示标签）
+            regions:[{ 
+              name: yangshuoName, 
+              itemStyle:{ areaColor:'#006e7a', borderColor:'#11e5f0', borderWidth:2 },
+              label:{ show:true, color:'#e8fdff', fontWeight:'bold' },
+              emphasis:{ itemStyle:{ areaColor:'#008d99' }, label:{ show:true, color:'#ffffff' } }
+            }]
+          },
+          series:[
+            { name:'站点', type:'scatter', coordinateSystem:'geo', symbolSize:12, encode:{value:2}, data: stations.map(s=>({name:s.name,value:[s.coord[0],s.coord[1],s.level]})),
+              itemStyle:{color:function(params){ const v = params.value && params.value[2]; if(v>1.4) return '#ff6b6b'; if(v>1.1) return '#ffd86b'; return '#6be29a'}}, label:{show:false}
+            },
+            // 高亮超警站点的脉冲效果
+            { name:'告警', type:'effectScatter', coordinateSystem:'geo', symbolSize:16, showEffectOn:'render', rippleEffect:{brushType:'stroke',scale:3},
+              data: stations.filter(s=>s.level>1.4).map(s=>({name:s.name,value:[s.coord[0],s.coord[1],s.level]})),
+              itemStyle:{color:'#ff6b6b'},
+              zlevel: 10
+            }
+            ,
+            // 漓江线路，使用 lines + effect 来表现流动感
+            {
+              name: '漓江',
+              type: 'lines',
+              coordinateSystem: 'geo',
+              zlevel: 5,
+              effect: { show: true, period: 6, trailLength: 0.7, color: '#a6ecff', symbol: 'arrow', symbolSize: 8 },
+              lineStyle: { color: '#4dd0e1', width: 3, opacity: 0.8, curveness: 0.2 },
+              // 转换为 lines 所需的 [[from,to],[from2,to2],...] 或 [[coords array]] 结构
+              data: (function(){
+                // 将连续坐标转换为多段 lines（每段为 [from,to]）
+                const arr = [];
+                for(let i=0;i<LIJIANG_COORDS.length-1;i++){
+                  arr.push({coords:[LIJIANG_COORDS[i], LIJIANG_COORDS[i+1]]});
+                }
+                return arr;
+              })()
+            }
+              ,
+              // 兴坪河
+              {
+                name: '兴坪河',
+                type: 'lines',
+                coordinateSystem: 'geo',
+                zlevel: 6,
+                effect: { show: true, period: 4, trailLength: 0.6, color: '#9fe6a0', symbol: 'arrow', symbolSize: 6 },
+                lineStyle: { color: '#7bd389', width: 2.5, opacity: 0.9, curveness: 0.1 },
+                data: (function(){ const arr=[]; for(let i=0;i<XINGPING_HE.length-1;i++){ arr.push({coords:[XINGPING_HE[i], XINGPING_HE[i+1]]}); } return arr })()
+              }
+              ,
+              // 幸福源江
+              {
+                name: '幸福源江',
+                type: 'lines',
+                coordinateSystem: 'geo',
+                zlevel: 6,
+                effect: { show: true, period: 5, trailLength: 0.6, color: '#ffd4a6', symbol: 'arrow', symbolSize: 6 },
+                lineStyle: { color: '#ffb36b', width: 2.5, opacity: 0.85, curveness: 0.1 },
+                data: (function(){ const arr=[]; for(let i=0;i<XINGFUYUAN_JIANG.length-1;i++){ arr.push({coords:[XINGFUYUAN_JIANG[i], XINGFUYUAN_JIANG[i+1]]}); } return arr })()
+              }
+              ,
+              // 西山村河
+              {
+                name: '西山村河',
+                type: 'lines',
+                coordinateSystem: 'geo',
+                zlevel: 6,
+                effect: { show: true, period: 4.5, trailLength: 0.6, color: '#b6d8ff', symbol: 'arrow', symbolSize: 6 },
+                lineStyle: { color: '#88b7ff', width: 2.5, opacity: 0.9, curveness: 0.1 },
+                data: (function(){ const arr=[]; for(let i=0;i<XISHANCUN_HE.length-1;i++){ arr.push({coords:[XISHANCUN_HE[i], XISHANCUN_HE[i+1]]}); } return arr })()
+              }
+            ,
+           //遇龙河
+            {
+                name: '遇龙河',
+                type: 'lines',
+                coordinateSystem: 'geo',
+                zlevel: 6,
+                effect: { show: true, period: 4.5, trailLength: 0.6, color: '#ff1493', symbol: 'arrow', symbolSize: 6 },
+                lineStyle: { color: '#fce4ec', width: 2.5, opacity: 0.85, curveness: 0.1 },
+                data: (function(){ const arr=[]; for(let i=0;i<YULONG_HE.length-1;i++){ arr.push({coords:[YULONG_HE[i], YULOMG_HE[i+1]]}); } return arr })()
+              }
+          ]
+          
+        };
+        // 确保地图容器允许交互
+        try{ mapChart.getDom().style.pointerEvents = 'auto'; }catch(e){}
+
+  mapChart.setOption(option);
+  // 点击站点交互（城市底图）
+  try{ mapChart.on('click', function(params){ if(params.seriesType==='scatter' || params.seriesType==='effectScatter'){ const s = stations.find(ss=>ss.name===params.name); if(s){ selectedStation = s; updateLevelChart(); updateSelectedHeader(s); showPopup(s); } } }); }catch(e){}
+        // 初始视图：明确设置 center 与 zoom，避免渲染时机问题导致不居中
+        try{
+          const c = (cityGeo.features && cityGeo.features[0] && cityGeo.features[0].properties && cityGeo.features[0].properties.center) ? cityGeo.features[0].properties.center : null;
+          if(c){
+            mapChart.setOption({ geo: { center: c, zoom: 6 } });
+            // 在渲染完成后强制一次 resize，避免容器尺寸或渲染延迟导致的偏移
+            setTimeout(()=>{ try{ mapChart.resize(); }catch(e){} }, 80);
+          }
+        }catch(e){ /* ignore */ }
+        // 点击站点交互
+        mapChart.on('click', function(params){ if(params.seriesType==='scatter' || params.seriesType==='effectScatter'){ const s = stations.find(ss=>ss.name===params.name); if(s){ selectedStation = s; updateLevelChart(); showPopup(s); } } });
+      };
+
+      // 使用回退：仅有阳朔县时（维持现有逻辑）
+      const useCounty = (geo)=>{
+        echarts.registerMap('yangshuo', geo);
+        const center = (geo.features && geo.features[0] && geo.features[0].properties && geo.features[0].properties.center) ? geo.features[0].properties.center : [110.494699,24.77534];
+        const option = {
+          tooltip:{trigger:'item',formatter: function(params){ if(params.seriesType==='scatter'){ return params.name + '<br/>水位: ' + (params.value[2]||'--') + ' m' } return params.name;}},
+          geo:{ map:'yangshuo', roam:true, label:{show:false},
+            itemStyle:{areaColor:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#0b5260'},{offset:1,color:'#04282d'}]},borderColor:'#0fbfc6',borderWidth:1,shadowColor:'rgba(0,0,0,0.5)',shadowBlur:20,opacity:0.95},
+            center:center, zoom:6
+          },
+          series:[
+            { name:'站点', type:'scatter', coordinateSystem:'geo', symbolSize:12, encode:{value:2}, data: stations.map(s=>({name:s.name,value:[s.coord[0],s.coord[1],s.level]})),
+              itemStyle:{color:function(params){ const v = params.value && params.value[2]; if(v>1.4) return '#ff6b6b'; if(v>1.1) return '#ffd86b'; return '#6be29a'}}, label:{show:false}
+            },
+            { name:'告警', type:'effectScatter', coordinateSystem:'geo', symbolSize:16, showEffectOn:'render', rippleEffect:{brushType:'stroke',scale:3},
+              data: stations.filter(s=>s.level>1.4).map(s=>({name:s.name,value:[s.coord[0],s.coord[1],s.level]})),
+              itemStyle:{color:'#ff6b6b'},
+              zlevel: 10
+            },
+            {
+              name: '漓江', type: 'lines', coordinateSystem: 'geo', zlevel: 5,
+              effect: { show: true, period: 6, trailLength: 0.7, color: '#a6ecff', symbol: 'arrow', symbolSize: 8 },
+              lineStyle: { color: '#4dd0e1', width: 3, opacity: 0.8, curveness: 0.2 },
+              data: (function(){ const arr=[]; for(let i=0;i<LIJIANG_COORDS.length-1;i++){ arr.push({coords:[LIJIANG_COORDS[i], LIJIANG_COORDS[i+1]]}); } return arr; })()
+            },
+            { name:'兴坪河', type:'lines', coordinateSystem:'geo', zlevel:6,
+              effect:{ show:true, period:4, trailLength:0.6, color:'#9fe6a0', symbol:'arrow', symbolSize:6 },
+              lineStyle:{ color:'#7bd389', width:2.5, opacity:0.9, curveness:0.1 },
+              data:(function(){ const arr=[]; for(let i=0;i<XINGPING_HE.length-1;i++){ arr.push({coords:[XINGPING_HE[i], XINGPING_HE[i+1]]}); } return arr })()
+            },
+            { name:'幸福源江', type:'lines', coordinateSystem:'geo', zlevel:6,
+              effect:{ show:true, period:5, trailLength:0.6, color:'#ffd4a6', symbol:'arrow', symbolSize:6 },
+              lineStyle:{ color:'#ffb36b', width:2.5, opacity:0.85, curveness:0.1 },
+              data:(function(){ const arr=[]; for(let i=0;i<XINGFUYUAN_JIANG.length-1;i++){ arr.push({coords:[XINGFUYUAN_JIANG[i], XINGFUYUAN_JIANG[i+1]]}); } return arr })()
+            },
+            { name:'西山村河', type:'lines', coordinateSystem:'geo', zlevel:6,
+              effect:{ show:true, period:4.5, trailLength:0.6, color:'#b6d8ff', symbol:'arrow', symbolSize:6 },
+              lineStyle:{ color:'#88b7ff', width:2.5, opacity:0.9, curveness:0.1 },
+              data:(function(){ const arr=[]; for(let i=0;i<XISHANCUN_HE.length-1;i++){ arr.push({coords:[XISHANCUN_HE[i], XISHANCUN_HE[i+1]]}); } return arr })()
+            },
+            { name:'遇龙河', type:'lines', coordinateSystem:'geo', zlevel:6,
+              effect:{ show:true, period:4.5, trailLength:0.6, color:'#ff1493', symbol:'arrow', symbolSize:6 },
+              lineStyle:{ color:'#fce4ec', width:2.5, opacity:0.85, curveness:0.1 },
+              data:(function(){ const arr=[]; for(let i=0;i<YULONG_HE.length-1;i++){ arr.push({coords:[YULONG_HE[i], YULONG_HE[i+1]]}); } return arr })()
+            }
+          ]
+        };
+        try{ mapChart.getDom().style.pointerEvents = 'auto'; }catch(e){}
+  mapChart.setOption(option);
+  // 点击站点交互（县域底图）
+  try{ mapChart.on('click', function(params){ if(params.seriesType==='scatter' || params.seriesType==='effectScatter'){ const s = stations.find(ss=>ss.name===params.name); if(s){ selectedStation = s; updateLevelChart(); updateSelectedHeader(s); showPopup(s); } } }); }catch(e){}
+      };
+
+      // 优先使用内联的 GUILIN_GEO（适用于 file:// 直接打开的场景），若不存在则使用 fetch 加载本地文件，失败再回退到阳朔或内嵌 YS_GEO。
+      (function loadGuilin(){
+        function fetchCity(){
+          return fetch('./桂林市.json')
+            .then(r=>r.json())
+            .then(city => { useCity(city); return city; })
+            .catch(err => {
+              console.warn('未找到 桂林市.json，将回退到阳朔县边界。', err);
+              return fetch('./阳朔县.json').then(r=>r.json()).then(geo => { useCounty(geo); return geo; }).catch(e2=>{ console.warn('fetch 阳朔县.json 失败，使用内嵌 Geo：', e2); useCounty(YS_GEO); return YS_GEO; });
+            });
+        }
+
+        try{
+          if(typeof GUILIN_GEO !== 'undefined' && GUILIN_GEO && GUILIN_GEO.features){
+            // 使用内联变量（更快且支持 file://）
+            try{ useCity(GUILIN_GEO); return; }catch(e){ console.warn('内联 GUILIN_GEO 使用失败，尝试通过 fetch 加载：', e); }
+          }
+        }catch(e){ /* ignore */ }
+
+        // 否则尝试 fetch
+        fetchCity();
+      })();
+      
+      // 响应窗口尺寸
+      window.addEventListener('resize', ()=>{ if(mapChart) mapChart.resize(); })
+    }
+
+    function showPopup(s){
+      const el = document.createElement('div'); el.className='card'; el.style.position='absolute'; el.style.left='50%'; el.style.top='50%'; el.style.transform='translate(-50%,-50%)'; el.style.zIndex=99;
+      el.innerHTML = `<h4>${s.name}</h4><div>水位：${s.level.toFixed(2)} m</div><div>状态：<span style='color:${statusColor(s.level)}'>●</span></div><div>经纬度：${s.coord[0].toFixed(4)}, ${s.coord[1].toFixed(4)}</div><button id='closePop'>关闭</button>`;
+      document.getElementById('mapCard').appendChild(el);
+      document.getElementById('closePop').onclick=()=>el.remove();
+    }
+
+    // ECharts 水位折线图
+    let levelChart = null;
+    function initLevelChart(){
+      levelChart = echarts.init(document.getElementById('levelChart'));
+      updateLevelChart();
+    }
+    function updateLevelChart(){
+      const now = +new Date();
+      const data = [];
+      let base = now - 3600*1000;
+      for(let i=0;i<24;i++){ data.push([new Date(base+ i*5*60*1000).toLocaleTimeString(), (selectedStation.level + (Math.random()-0.5)*0.2).toFixed(2)]) }
+      const option = {
+        xAxis:{type:'category',data:data.map(d=>d[0])},
+        yAxis:{type:'value',min:0},
+        series:[{type:'line',data:data.map(d=>d[1]),smooth:true,areaStyle:{color:'rgba(46,204,113,0.08)'}}]
+      };
+      levelChart.setOption(option);
+    }
+
+    function bindControls(){
+      document.getElementById('playBtn').onclick = ()=>{ if(playing) return; playing=true; simStart() }
+      document.getElementById('pauseBtn').onclick = ()=>{ playing=false; if(simTimer){ clearInterval(simTimer); simTimer=null } }
+    }
+
+    // 水位正常比例图（圆环）
+    let levelPercentChart = null;
+    function initLevelPercentChart(){
+      try{
+        const el = document.getElementById('levelPercentChart');
+        if(!el) return;
+        levelPercentChart = echarts.init(el);
+        updateLevelPercentChart();
+      }catch(e){ console.warn('initLevelPercentChart 失败', e); }
+    }
+    function updateLevelPercentChart(){
+      if(!levelPercentChart) return;
+      const total = stations.length;
+      const normal = stations.filter(s=>s.level<=1.1).length;
+      const warn = stations.filter(s=>s.level>1.1 && s.level<=1.4).length;
+      const alarm = stations.filter(s=>s.level>1.4).length;
+      const option = {
+        tooltip:{show:true,formatter:'{b}: {d}%'},
+        series:[{
+          type:'pie',radius:['50%','75%'],avoidLabelOverlap:false,center:['50%','50%'],
+          label:{show:true,position:'center',formatter:`{a|正常 ${normal}/${total}\n}{b|${Math.round((normal/total)*100)}%}`,rich:{a:{fontSize:12,color:'#9fead6',lineHeight:20},b:{fontSize:18,color:'#e8fdff',fontWeight:'bold'}}},
+          labelLine:{show:false},
+          data:[{value:normal,name:'正常',itemStyle:{color:'#6be29a'}},{value:warn,name:'警戒',itemStyle:{color:'#ffd86b'}},{value:alarm,name:'超警',itemStyle:{color:'#ff6b6b'}}]
+        }]
+      };
+      try{ levelPercentChart.setOption(option, true); }catch(e){ console.warn('updateLevelPercentChart 失败', e); }
+    }
+
+    function simStart(){
+      simTimer = setInterval(()=>{
+        // 随机改变各站水位并刷新
+        stations.forEach(s=>{ s.level += (Math.random()-0.45)*0.05; if(s.level<0) s.level=0; })
+        renderStationTable(); updateMapData(); updateLevelChart();
+        // 同步右上角选中站点水位显示（若有选中）
+        try{ if(selectedStation) updateSelectedHeader(selectedStation); }catch(e){}
+  try{ updateLevelPercentChart(); }catch(e){}
+        // 检测警戒并简单提示
+        const alertStations = stations.filter(s=>s.level>1.4);
+        if(alertStations.length){ console.warn('超警告站点',alertStations.map(s=>s.name)); }
+      },2000)
+    }
+
+    function updateMapData(){
+      if(!mapChart) return;
+      // 只使用拥有有效经纬的站点，防止意外的 null/undefined 引起渲染错误
+      function validCoord(s){ return s && Array.isArray(s.coord) && s.coord.length>=2 && isFinite(s.coord[0]) && isFinite(s.coord[1]); }
+      const scatter = stations.filter(validCoord).map(s=>({name:s.name,value:[s.coord[0],s.coord[1],Number((s.level||0).toFixed(2))]}));
+      const alerts = stations.filter(s=> validCoord(s) && s.level>1.4 ).map(s=>({name:s.name,value:[s.coord[0],s.coord[1],Number((s.level||0).toFixed(2))]}));
+      // 仅更新前两个 series（scatter 与 effectScatter），保留漓江 lines series
+      try{
+        mapChart.setOption({series:[{data:scatter},{data:alerts}]});
+      }catch(e){
+        console.warn('updateMapData setOption 失败', e);
+        try{ mapChart.setOption({series:[{data:scatter||[]},{data:alerts||[]} ]}); }catch(e2){ /* ignore */ }
+      }
+    }
+
+    init();
+    // 简报助手：优先调用后端 dataagent（LangChain），失败回退本地关键词
+    const briefingTextEl = document.getElementById('briefingText');
+    const briefingReply = document.getElementById('briefingReply');
+
+    function getBriefingReplyLocal(q) {
+      q = (q || '').trim();
+      if (!q) return '请在上方输入您的问题。';
+      if (/雨量|降雨|暴雨/.test(q)) return '过去24小时桂林市普降大到暴雨，部分县区局部降大暴雨，最大日雨量165.5毫米。';
+      if (/水位|流量|桂林水文站/.test(q)) return '漓江桂林水文站水位142.20米，流量154立方米每秒，未超警。';
+      if (/未来|预报|趋势/.test(q)) return '预计未来24小时漓江桂林市城区至阳朔县城河段水位将继续上涨1.5～2米，桂江平乐县城河段上涨约1米，不会超警。';
+      if (/超警|洪水|风险/.test(q)) return '部分中小河流可能出现超警洪水，主要集中在全州、恭城、永福、临桂、阳朔等县区。';
+      if (/哪些河流|涨水|受影响/.test(q)) return '恭城河、湘江全州县城河段、永福县大邦河、灌阳县秀江、雁山区良丰河等多条河流出现了1～2.6米的涨水。';
+      if (/全部简报|详细/.test(q)) return briefingTextEl ? briefingTextEl.innerText : '';
+      return '很抱歉，未能理解您的问题。请尝试输入“雨量”、“水位”、“未来趋势”、“超警”等关键词。';
+    }
+
+    async function callBackendBriefing(q){
+      const url = 'http://localhost:3001/api/briefing';
+      const resp = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({q})});
+      if(!resp.ok) throw new Error('HTTP '+resp.status);
+      const data = await resp.json();
+      // backend returns {reply: '...', source: '...'}
+      return data && (data.reply || data.reply === '') ? data.reply : JSON.stringify(data);
+    }
+
+    document.getElementById('briefingAskBtn').onclick = async function() {
+      const q = document.getElementById('briefingInput').value || '';
+      briefingReply.innerText = '加载中...';
+      try{
+        const r = await callBackendBriefing(q);
+        briefingReply.innerText = r;
+      }catch(e){
+        // fallback to local logic
+        briefingReply.innerText = getBriefingReplyLocal(q);
+      }
+    };
+
+    document.getElementById('briefingInput').addEventListener('keydown', function(e){
+      if(e.key==='Enter'){
+        document.getElementById('briefingAskBtn').click();
+      }
+    });
+
+    // 生成简报：调用后端智能体生成并更新右侧简报文本
+    const genBtn = document.getElementById('briefingGenerateBtn');
+    if(genBtn){
+      genBtn.onclick = async function(){
+        genBtn.disabled = true; genBtn.textContent = '生成中...';
+        try{
+          const prompt = '请基于当前水文与气象监测数据，生成一份面向公众的详细简报，包含当前观测、风险提示和建议行动。';
+          const r = await callBackendBriefing(prompt);
+          if(briefingTextEl) briefingTextEl.innerText = r;
+        }catch(e){
+          if(briefingTextEl) briefingTextEl.innerText = '生成失败，显示本地简报。';
+        }finally{
+          genBtn.disabled = false; genBtn.textContent = '生成简报';
+        }
+      };
+    }
+  </script>
+
+  <!-- 简报/周报放大模态窗口 -->
+  <div id="briefingModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>简报详情</h2>
+        <button class="modal-close-btn" onclick="closeBriefingModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBriefingContent"></div>
+      <div class="modal-footer">
+        <button class="modal-btn modal-btn-secondary" onclick="copyModalContent()">复制内容</button>
+        <button class="modal-btn modal-btn-primary" onclick="closeBriefingModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 放大简报的函数
+    function openBriefingModal() {
+      const briefingText = document.getElementById('briefingText').innerText;
+      const modalContent = document.getElementById('modalBriefingContent');
+      modalContent.innerText = briefingText;
+      document.getElementById('briefingModal').classList.add('show');
+    }
+
+    // 关闭模态窗口
+    function closeBriefingModal() {
+      document.getElementById('briefingModal').classList.remove('show');
+    }
+
+    // 复制模态窗口中的内容
+    function copyModalContent() {
+      const modalContent = document.getElementById('modalBriefingContent').innerText;
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(modalContent).then(() => {
+          alert('已复制到剪贴板');
+        }).catch(err => {
+          console.error('复制失败:', err);
+          fallbackCopy(modalContent);
+        });
+      } else {
+        fallbackCopy(modalContent);
+      }
+    }
+
+    // 复制简报文本（直接复制）
+    function copyBriefingText() {
+      const briefingText = document.getElementById('briefingText').innerText;
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(briefingText).then(() => {
+          alert('已复制到剪贴板');
+        }).catch(err => {
+          console.error('复制失败:', err);
+          fallbackCopy(briefingText);
+        });
+      } else {
+        fallbackCopy(briefingText);
+      }
+    }
+
+    // 备用复制方法（针对不支持 Clipboard API 的浏览器）
+    function fallbackCopy(text) {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.opacity = '0';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        alert('已复制到剪贴板');
+      } catch (err) {
+        alert('复制失败，请手动复制');
+      }
+      document.body.removeChild(textArea);
+    }
+
+    // 关闭模态窗口时点击背景
+    document.getElementById('briefingModal').addEventListener('click', function(event) {
+      if (event.target === this) {
+        closeBriefingModal();
+      }
+    });
+
+    // 绑定放大和复制按钮
+    document.getElementById('briefingEnlargeBtn').addEventListener('click', openBriefingModal);
+    document.getElementById('briefingCopyBtn').addEventListener('click', copyBriefingText);
+  </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
