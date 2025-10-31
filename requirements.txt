@@ -1,0 +1,7 @@
+python版本：3.9
+
+模型训练时使用的是GPU版本的PyTorch
+PyTorch版本: 1.13.0， 配套CUDA版本：11.6（cu116）
+
+numpy版本：1.23.5
+joblib版本：1.5.2
