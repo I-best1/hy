@@ -31,4 +31,6 @@ except ImportError:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=3001, reload=True)
+    import sys
+    # 不使用 reload=True，避免在 Windows 中的兼容性问题
+    uvicorn.run(app, host="0.0.0.0", port=3001)

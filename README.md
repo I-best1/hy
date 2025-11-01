@@ -2,6 +2,9 @@
 
 一个现代化的水文监测大屏系统，集成了实时数据展示、智能简报生成、天气预报等功能。
 
+<img width="2518" height="1420" alt="屏幕截图 2025-11-01 140453" src="https://github.com/user-attachments/assets/819a2437-c2ff-48d7-b7d9-8e5413bd5702" />
+
+
 ## ✨ 核心特性
 
 ### 后端功能
@@ -41,7 +44,7 @@ python app.py
 
 # 4. 在另一个终端启动前端
 cd ../..
-python -m http.server 8000
+python -m http.server 8001
 
 # 5. 打开浏览器
 # 访问 http://localhost:8000
@@ -277,3 +280,12 @@ MIT License
 **版本**: 1.0.0  
 **状态**: ✅ 稳定版本
 
+<img width="2525" height="1422" alt="屏幕截图 2025-11-01 140315" src="https://github.com/user-attachments/assets/e8b13acb-5577-4d1b-9606-04e2d73c5706" />
+
+<img width="2535" height="1426" alt="屏幕截图 2025-11-01 140334" src="https://github.com/user-attachments/assets/9bfe1b94-c383-430f-9e74-ce3aa7bbf686" />
+
+<img width="2524" height="1421" alt="屏幕截图 2025-11-01 140508" src="https://github.com/user-attachments/assets/e0b66f4c-c855-4dbd-894c-993e9856cd2a" />
+
+<img width="2526" height="1424" alt="屏幕截图 2025-11-01 140522" src="https://github.com/user-attachments/assets/194efaef-89c6-489f-a16a-f33019b5a883" />
+
+<img width="1934" height="1405" alt="屏幕截图 2025-11-01 140541" src="https://github.com/user-attachments/assets/c91a1f88-896c-40c9-a7a9-937706a74e35" />
