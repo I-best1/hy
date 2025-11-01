@@ -41,7 +41,7 @@ python app.py
 
 # 4. 在另一个终端启动前端
 cd ../..
-python -m http.server 8000
+python -m http.server 8001
 
 # 5. 打开浏览器
 # 访问 http://localhost:8000

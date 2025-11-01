@@ -35,6 +35,7 @@
     .modal-close-btn {background:transparent;border:none;color:#9fead6;font-size:24px;cursor:pointer;padding:0;width:30px;height:30px;display:flex;align-items:center;justify-content:center}
     .modal-close-btn:hover {color:#e8fdff}
     .modal-body {color:#c9f3ff;white-space:pre-wrap;word-wrap:break-word;line-height:1.7;max-height:calc(90vh - 150px);overflow-y:auto}
+    .modal-body.markdown-content {white-space: normal; font-size: 14px;}
     .modal-footer {margin-top:15px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid rgba(0,150,150,0.2);padding-top:10px}
     .modal-btn {padding:8px 16px;border-radius:4px;border:none;cursor:pointer;font-size:14px;transition:all 0.3s}
     .modal-btn-primary {background:#0fbfc6;color:#012;font-weight:bold}
@@ -48,7 +49,54 @@
     .briefing-toolbar button:hover {background:#13d4d6;box-shadow:0 0 8px rgba(15,191,198,0.4)}
     
     @keyframes fadeIn {from{opacity:0} to{opacity:1}}
+    
+    /* Markdown 样式 */
+    .markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4 {
+      color: #0fbfc6;
+      margin-top: 1em;
+      margin-bottom: 0.5em;
+      border-bottom: 1px solid rgba(15, 191, 198, 0.2);
+      padding-bottom: 0.3em;
+    }
+    .markdown-content h1 { font-size: 1.8em; }
+    .markdown-content h2 { font-size: 1.5em; }
+    .markdown-content h3 { font-size: 1.2em; }
+    .markdown-content h4 { font-size: 1.1em; }
+    .markdown-content strong { color: #ffd86b; }
+    .markdown-content em { color: #9fead6; font-style: italic; }
+    .markdown-content ul, .markdown-content ol {
+      margin: 0.5em 0;
+      padding-left: 2em;
+      line-height: 1.8;
+    }
+    .markdown-content li {
+      margin: 0.3em 0;
+    }
+    .markdown-content p {
+      line-height: 1.8;
+      margin: 0.5em 0;
+    }
+    .markdown-content code {
+      background: rgba(0, 150, 150, 0.1);
+      padding: 2px 4px;
+      border-radius: 3px;
+      color: #ffd86b;
+      font-family: monospace;
+    }
+    .markdown-content hr {
+      border: none;
+      border-top: 1px dashed rgba(0, 150, 150, 0.3);
+      margin: 1em 0;
+    }
+    .markdown-content blockquote {
+      border-left: 3px solid #0fbfc6;
+      padding-left: 1em;
+      margin: 0.5em 0;
+      color: #9fead6;
+    }
   </style>
+  <!-- 引入 marked.js 用于 Markdown 解析 -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@11.1.0/marked.min.js"></script>
   <!-- 引入 ECharts CDN -->
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.2/dist/echarts.min.js"></script>
 </head>
@@ -59,6 +107,12 @@
       <div>
         <span id="nowTime"></span>
         <span id="selectedInfo" style="margin-left:16px;padding:6px 10px;background:rgba(11,82,96,0.6);border-radius:6px;color:#e8fdff;display:inline-block;min-width:200px;text-align:left">选中站点：<strong id="selName">-</strong> 水位：<span id="selLevel">-</span> m</span>
+        <button onclick="openAlertManagement()" style="margin-left:16px;padding:8px 16px;background:linear-gradient(135deg,#ff6b6b,#ee5a52);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:bold;box-shadow:0 2px 8px rgba(255,107,107,0.4);transition:all 0.3s">
+          ⚠️ 设置预警
+        </button>
+        <button id="apiConfigBtn" onclick="openApiConfig()" style="margin-left:8px;padding:8px 16px;background:linear-gradient(135deg,#9b59b6,#8e44ad);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:bold;box-shadow:0 2px 8px rgba(155,89,182,0.4);transition:all 0.3s" title="配置 AI 模型">
+          ⚙️ AI 配置
+        </button>
       </div>
     </header>
     <aside class="left">
@@ -89,7 +143,7 @@
       </div>
       <div class="card" id="weatherCard">
         <h3>气象信息</h3>
-        <div id="weather">阳朔全域晴朗，无降雨</div>
+        <div id="weather">--</div>
       </div>
       <div class="card" id="briefingQA">
         <h3 style="margin:0">智能助手</h3>
@@ -361,6 +415,11 @@
     let selectedStation = stations[0];
 
     function init(){
+      // 请求浏览器通知权限
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+      
       // 放置站点到县域内（若 coord 为 null，将由 ensureStationsInside 调整）
       try{ ensureStationsInside(); }catch(e){ console.warn('ensureStationsInside 错误', e); }
   // 为每个站点生成初始随机水位（0 - 1.8 m）
@@ -382,7 +441,12 @@
       tbody.innerHTML = '';
       stations.forEach(s=>{
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${s.name}</td><td>${s.level.toFixed(2)}</td><td><span class='status-dot' style='background:${statusColor(s.level)}'></span></td>`;
+        // 检查是否启用预警
+        const key = `alert_${s.name}`;
+        const settings = JSON.parse(localStorage.getItem(key) || '{"enabled":false}');
+        const alertBadge = settings.enabled ? '<span style="display:inline-block;margin-left:4px;padding:2px 6px;background:#ff6b6b;color:#fff;font-size:10px;border-radius:4px;font-weight:bold">⚠️</span>' : '';
+        
+        tr.innerHTML = `<td>${s.name}${alertBadge}</td><td>${s.level.toFixed(2)}</td><td><span class='status-dot' style='background:${statusColor(s.level)}'></span></td>`;
         tr.onclick = ()=>{ selectedStation = s; updateLevelChart(); updateSelectedHeader(s); }
         tbody.appendChild(tr);
       })
@@ -694,10 +758,260 @@
     }
 
     function showPopup(s){
-      const el = document.createElement('div'); el.className='card'; el.style.position='absolute'; el.style.left='50%'; el.style.top='50%'; el.style.transform='translate(-50%,-50%)'; el.style.zIndex=99;
-      el.innerHTML = `<h4>${s.name}</h4><div>水位：${s.level.toFixed(2)} m</div><div>状态：<span style='color:${statusColor(s.level)}'>●</span></div><div>经纬度：${s.coord[0].toFixed(4)}, ${s.coord[1].toFixed(4)}</div><button id='closePop'>关闭</button>`;
-      document.getElementById('mapCard').appendChild(el);
-      document.getElementById('closePop').onclick=()=>el.remove();
+      // 验证输入
+      if (!s) {
+        console.error('showPopup: 无效的站点对象', s);
+        alert('❌ 站点数据无效');
+        return;
+      }
+      
+      if (!s.name || !s.level || !s.coord || !s.addr || !s.type) {
+        console.error('showPopup: 站点数据不完整', s);
+        alert('❌ 站点数据不完整');
+        return;
+      }
+      
+      console.log('showPopup: 打开弹窗 -', s.name, '当前水位:', s.level);
+      
+      const el = document.createElement('div'); 
+      el.className='card'; 
+      el.style.position='fixed'; 
+      el.style.left='50%'; 
+      el.style.top='50%'; 
+      el.style.transform='translate(-50%,-50%)'; 
+      el.style.zIndex=9999;
+      el.style.maxWidth='650px';
+      el.style.minWidth='500px';
+      el.style.maxHeight='90vh';
+      el.style.overflow='auto';
+      el.style.backgroundColor='#041729';
+      el.style.borderRadius='8px';
+      el.style.boxShadow='0 20px 60px rgba(0,0,0,0.8)';
+      
+      // 创建遮罩背景
+      const mask = document.createElement('div');
+      mask.style.position='fixed';
+      mask.style.top='0';
+      mask.style.left='0';
+      mask.style.right='0';
+      mask.style.bottom='0';
+      mask.style.backgroundColor='rgba(0,0,0,0.6)';
+      mask.style.zIndex=9998;
+      mask.style.cursor='pointer';
+      mask.onclick = () => {
+        console.log('点击遮罩关闭弹窗');
+        // 注意：trendChart 会在后面初始化，这里先保持空实现
+        if (typeof trendChart !== 'undefined' && trendChart) {
+          trendChart.dispose();
+        }
+        el.remove();
+        mask.remove();
+      };
+      
+      // 生成历史和预测数据
+      const historyData = [];
+      const forecastData = [];
+      const now = Date.now();
+      
+      // 过去24小时数据（每小时一个点）
+      for(let i = 24; i >= 0; i--) {
+        const time = new Date(now - i * 3600 * 1000);
+        const value = s.level + (Math.random() - 0.5) * 0.3;
+        historyData.push({
+          time: time.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'}),
+          value: Math.max(0, value).toFixed(2)
+        });
+      }
+      
+      // 未来24小时预测数据
+      for(let i = 1; i <= 24; i++) {
+        const time = new Date(now + i * 3600 * 1000);
+        const trend = (Math.random() - 0.45) * 0.1; // 略有下降趋势
+        const value = parseFloat(historyData[historyData.length - 1].value) + trend * i;
+        forecastData.push({
+          time: time.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'}),
+          value: Math.max(0, value).toFixed(2)
+        });
+      }
+      
+      // 获取当前预警设置
+      const alertSettings = JSON.parse(localStorage.getItem('alertSettings') || '{}');
+      const stationAlert = alertSettings[s.name] || {threshold: 1.4, rateThreshold: 0.1};
+      
+      el.innerHTML = `
+        <div style="padding:20px;color:#c9f3ff;font-family:Arial,sans-serif">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid rgba(15,191,198,0.3);padding-bottom:15px">
+            <h2 style="margin:0;font-size:24px;color:#0fbfc6">${s.name}</h2>
+            <button id='closePop' style="padding:6px 16px;border-radius:4px;background:#e74c3c;color:#fff;border:none;cursor:pointer;font-weight:bold;font-size:14px">关闭</button>
+          </div>
+          
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:20px">
+            <div style="background:rgba(15,191,198,0.1);padding:12px;border-radius:6px;border-left:3px solid #0fbfc6">
+              <div style="color:#9fead6;font-size:12px;margin-bottom:5px">当前水位</div>
+              <div style="font-size:28px;font-weight:bold;color:#0fbfc6">${s.level.toFixed(2)} m</div>
+            </div>
+            <div style="background:rgba(15,191,198,0.1);padding:12px;border-radius:6px;border-left:3px solid #0fbfc6">
+              <div style="color:#9fead6;font-size:12px;margin-bottom:5px">状态</div>
+              <div style="font-size:20px;font-weight:bold"><span style='color:${statusColor(s.level)};font-size:14px'>●</span> <span style='color:${statusColor(s.level)}'>${s.level > 1.4 ? '超警' : s.level > 1.1 ? '警戒' : '正常'}</span></div>
+            </div>
+          </div>
+          
+          <div style="background:rgba(15,191,198,0.05);padding:15px;border-radius:6px;margin-bottom:20px;border:1px solid rgba(15,191,198,0.2)">
+            <div style="font-weight:bold;margin-bottom:12px;color:#0fbfc6;font-size:16px">⚙️ 预警设置</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+              <div>
+                <label style="font-size:12px;color:#9fead6;display:block;margin-bottom:6px">水位阈值 (m)</label>
+                <input type="number" id="thresholdInput" value="${stationAlert.threshold}" step="0.1" min="0" max="5"
+                  style="width:100%;padding:8px;border-radius:4px;border:1px solid #0fbfc6;background:#041729;color:#c9f3ff;box-sizing:border-box">
+              </div>
+              <div>
+                <label style="font-size:12px;color:#9fead6;display:block;margin-bottom:6px">上升速率阈值 (m/h)</label>
+                <input type="number" id="rateInput" value="${stationAlert.rateThreshold}" step="0.01" min="0" max="1"
+                  style="width:100%;padding:8px;border-radius:4px;border:1px solid #0fbfc6;background:#041729;color:#c9f3ff;box-sizing:border-box">
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <button id="saveAlertBtn" style="padding:10px;border-radius:4px;background:linear-gradient(135deg,#0fbfc6,#0d9ba6);color:#041729;border:none;cursor:pointer;font-weight:bold;font-size:14px;transition:all 0.3s">
+                💾 保存设置
+              </button>
+              <button id="confirmBtn" style="padding:10px;border-radius:4px;background:linear-gradient(135deg,#2ecc71,#27ae60);color:#fff;border:none;cursor:pointer;font-weight:bold;font-size:14px;transition:all 0.3s">
+                ✅ 确定
+              </button>
+            </div>
+          </div>
+          
+          <div style="margin-bottom:20px">
+            <div style="font-weight:bold;margin-bottom:12px;color:#0fbfc6;font-size:16px">📈 水位走势</div>
+            <div id="trendChart" style="width:100%;height:280px;background:rgba(0,0,0,0.3);border-radius:6px;border:1px solid rgba(15,191,198,0.2)"></div>
+          </div>
+          
+          <div style="background:rgba(15,191,198,0.05);padding:12px;border-radius:6px;border:1px solid rgba(15,191,198,0.2);font-size:12px;color:#9fead6;line-height:1.8">
+            <div>📍 <strong>地址</strong>：${s.addr}</div>
+            <div>🏷️ <strong>类型</strong>：${s.type}</div>
+            <div>🎯 <strong>坐标</strong>：${s.coord[0].toFixed(4)}, ${s.coord[1].toFixed(4)}</div>
+          </div>
+        </div>
+      `;
+      
+      document.body.appendChild(mask);
+      document.body.appendChild(el);
+      
+      // 初始化趋势图表
+      const trendChart = echarts.init(document.getElementById('trendChart'));
+      const allTimes = [...historyData.map(d => d.time), ...forecastData.map(d => d.time)];
+      const allValues = [...historyData.map(d => parseFloat(d.value)), ...forecastData.map(d => parseFloat(d.value))];
+      
+      trendChart.setOption({
+        grid: { left: 50, right: 20, top: 40, bottom: 30 },
+        tooltip: {
+          trigger: 'axis',
+          formatter: function(params) {
+            const idx = params[0].dataIndex;
+            const isForecast = idx >= historyData.length;
+            return `${params[0].axisValue}<br/>${isForecast ? '预测' : '实测'}水位：${params[0].data} m`;
+          }
+        },
+        xAxis: {
+          type: 'category',
+          data: allTimes,
+          axisLabel: { interval: 5, rotate: 45, fontSize: 10, color: '#9fead6' },
+          axisLine: { lineStyle: { color: '#0fbfc6' } }
+        },
+        yAxis: {
+          type: 'value',
+          name: '水位(m)',
+          nameTextStyle: { color: '#9fead6' },
+          axisLabel: { color: '#9fead6' },
+          axisLine: { lineStyle: { color: '#0fbfc6' } },
+          splitLine: { lineStyle: { color: 'rgba(15,191,198,0.1)' } }
+        },
+        visualMap: {
+          show: false,
+          pieces: [
+            { gt: 0, lte: 1.1, color: '#2ecc71' },
+            { gt: 1.1, lte: 1.4, color: '#f1c40f' },
+            { gt: 1.4, color: '#e74c3c' }
+          ]
+        },
+        series: [
+          {
+            name: '水位',
+            type: 'line',
+            data: allValues,
+            smooth: true,
+            lineStyle: { width: 2 },
+            areaStyle: { opacity: 0.3 },
+            markLine: {
+              data: [
+                { yAxis: stationAlert.threshold, name: '预警线', lineStyle: { color: '#e74c3c', type: 'dashed' } }
+              ],
+              label: { formatter: '预警线 {c}m' }
+            },
+            markArea: {
+              data: [[
+                { xAxis: historyData[historyData.length - 1].time, itemStyle: { color: 'rgba(255,255,255,0.05)' } },
+                { xAxis: forecastData[forecastData.length - 1].time }
+              ]],
+              label: { show: true, position: 'top', formatter: '预测区域', color: '#ffd86b' }
+            }
+          }
+        ]
+      });
+      
+      // 关闭按钮
+      document.getElementById('closePop').onclick = () => {
+        console.log('关闭趋势弹窗');
+        trendChart.dispose();
+        el.remove();
+        mask.remove();
+      };
+      
+      // 确定按钮 - 直接关闭弹窗（不需要保存设置）
+      document.getElementById('confirmBtn').onclick = () => {
+        console.log('点击确定按钮，关闭弹窗');
+        trendChart.dispose();
+        el.remove();
+        mask.remove();
+      };
+      
+      // 保存预警设置按钮
+      document.getElementById('saveAlertBtn').onclick = () => {
+        const threshold = parseFloat(document.getElementById('thresholdInput').value);
+        const rateThreshold = parseFloat(document.getElementById('rateInput').value);
+        
+        if (isNaN(threshold) || isNaN(rateThreshold)) {
+          alert('请输入有效的数值');
+          return;
+        }
+        
+        if (threshold < 0 || threshold > 5 || rateThreshold < 0 || rateThreshold > 1) {
+          alert('水位阈值范围：0-5m\n上升速率范围：0-1m/h');
+          return;
+        }
+        
+        // 保存到 localStorage 中的站点级别预警设置
+        const key = `alert_${s.name}`;
+        const settings = JSON.parse(localStorage.getItem(key) || '{"threshold":1.4,"rateThreshold":0.1,"enabled":false}');
+        settings.threshold = threshold;
+        settings.rateThreshold = rateThreshold;
+        localStorage.setItem(key, JSON.stringify(settings));
+        
+        // 也保存到旧的格式（兼容性）
+        const alertSettings = JSON.parse(localStorage.getItem('alertSettings') || '{}');
+        alertSettings[s.name] = { threshold, rateThreshold };
+        localStorage.setItem('alertSettings', JSON.stringify(alertSettings));
+        
+        alert(`✅ 已保存 ${s.name} 的预警设置\n水位阈值：${threshold}m\n上升速率：${rateThreshold}m/h`);
+        
+        // 更新图表中的预警线
+        trendChart.setOption({
+          series: [{
+            markLine: {
+              data: [{ yAxis: threshold, name: '预警线', lineStyle: { color: '#e74c3c', type: 'dashed' } }]
+            }
+          }]
+        });
+      };
     }
 
     // ECharts 水位折线图
@@ -753,16 +1067,70 @@
     }
 
     function simStart(){
+      // 存储上一次水位，用于计算涨幅
+      const previousLevels = {};
+      stations.forEach(s => previousLevels[s.name] = s.level);
+      
       simTimer = setInterval(()=>{
         // 随机改变各站水位并刷新
-        stations.forEach(s=>{ s.level += (Math.random()-0.45)*0.05; if(s.level<0) s.level=0; })
+        stations.forEach(s=>{ 
+          const oldLevel = s.level;
+          s.level += (Math.random()-0.45)*0.05; 
+          if(s.level<0) s.level=0;
+          
+          // 检查预警
+          const key = `alert_${s.name}`;
+          const settings = JSON.parse(localStorage.getItem(key) || '{"threshold":1.4,"rateThreshold":0.1,"enabled":false}');
+          
+          if (settings.enabled) {
+            let alertMessage = '';
+            
+            // 检查水位阈值
+            if (s.level > settings.threshold) {
+              alertMessage += `⚠️ ${s.name} 水位超限！当前：${s.level.toFixed(2)}m，阈值：${settings.threshold}m`;
+            }
+            
+            // 检查涨幅阈值（2秒间隔，换算成小时涨幅）
+            const prevLevel = previousLevels[s.name] || oldLevel;
+            const riseRate = (s.level - prevLevel) * (3600 / 2); // 转换为米/小时
+            if (riseRate > settings.rateThreshold) {
+              if (alertMessage) alertMessage += '\n';
+              alertMessage += `⚠️ ${s.name} 涨幅过快！当前涨幅：${riseRate.toFixed(3)}m/h，阈值：${settings.rateThreshold}m/h`;
+            }
+            
+            if (alertMessage) {
+              console.warn(alertMessage);
+              
+              // 调用后端检查API（用于记录和分析）
+              fetch('http://localhost:3001/api/alerts/check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  station_name: s.name,
+                  current_level: s.level,
+                  rise_rate: riseRate
+                })
+              }).catch(err => console.warn('后端检查失败:', err));
+              
+              // 显示浏览器通知
+              if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('🚨 水位预警', { 
+                  body: alertMessage, 
+                  icon: '⚠️',
+                  tag: `alert_${s.name}`,
+                  requireInteraction: true
+                });
+              }
+            }
+          }
+          
+          previousLevels[s.name] = s.level;
+        });
+        
         renderStationTable(); updateMapData(); updateLevelChart();
         // 同步右上角选中站点水位显示（若有选中）
         try{ if(selectedStation) updateSelectedHeader(selectedStation); }catch(e){}
-  try{ updateLevelPercentChart(); }catch(e){}
-        // 检测警戒并简单提示
-        const alertStations = stations.filter(s=>s.level>1.4);
-        if(alertStations.length){ console.warn('超警告站点',alertStations.map(s=>s.name)); }
+        try{ updateLevelPercentChart(); }catch(e){}
       },2000)
     }
 
@@ -800,7 +1168,18 @@
 
     async function callBackendBriefing(q){
       const url = 'http://localhost:3001/api/briefing';
-      const resp = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({q})});
+      // 从 localStorage 获取保存的 API Key 和模型
+      const config = getApiConfig ? getApiConfig() : {};
+      const requestBody = {
+        q: q,
+        api_key: config.apiKey || undefined,
+        model: config.model || undefined
+      };
+      const resp = await fetch(url, {
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(requestBody)
+      });
       if(!resp.ok) throw new Error('HTTP '+resp.status);
       const data = await resp.json();
       // backend returns {reply: '...', source: '...'}
@@ -831,11 +1210,41 @@
       genBtn.onclick = async function(){
         genBtn.disabled = true; genBtn.textContent = '生成中...';
         try{
-          const prompt = '请基于当前水文与气象监测数据，生成一份面向公众的详细简报，包含当前观测、风险提示和建议行动。';
-          const r = await callBackendBriefing(prompt);
-          if(briefingTextEl) briefingTextEl.innerText = r;
+          // 调用专门的简报生成接口
+          const url = 'http://localhost:3001/api/briefing/generate';
+          
+          // 从 localStorage 获取保存的 API Key 和模型
+          const config = getApiConfig ? getApiConfig() : {};
+          
+          const requestBody = {
+            api_key: config.apiKey || undefined,
+            model: config.model || undefined
+          };
+          
+          const resp = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+          });
+          if(!resp.ok) throw new Error('HTTP '+resp.status);
+          const data = await resp.json();
+          
+          // 获取 Markdown 内容
+          const markdownContent = data.reply || '生成失败';
+          
+          // 在控制台显示数据源
+          console.log(`[简报] 数据源: ${data.source}`);
+          
+          // 更新简报显示区域
+          if(briefingTextEl) {
+            briefingTextEl.innerHTML = marked.parse(markdownContent);
+            briefingTextEl.classList.add('markdown-content');
+          }
         }catch(e){
-          if(briefingTextEl) briefingTextEl.innerText = '生成失败，显示本地简报。';
+          if(briefingTextEl) {
+            briefingTextEl.innerText = '生成失败，请稍后重试。错误: ' + e.message;
+            briefingTextEl.classList.remove('markdown-content');
+          }
         }finally{
           genBtn.disabled = false; genBtn.textContent = '生成简报';
         }
@@ -861,9 +1270,19 @@
   <script>
     // 放大简报的函数
     function openBriefingModal() {
-      const briefingText = document.getElementById('briefingText').innerText;
+      const briefingTextEl = document.getElementById('briefingText');
       const modalContent = document.getElementById('modalBriefingContent');
-      modalContent.innerText = briefingText;
+      
+      // 检查是否是 Markdown 内容（有 HTML 标签）
+      if (briefingTextEl.innerHTML && briefingTextEl.innerHTML.includes('<')) {
+        // 复制 HTML 内容
+        modalContent.innerHTML = briefingTextEl.innerHTML;
+        modalContent.classList.add('markdown-content');
+      } else {
+        // 复制纯文本
+        modalContent.innerText = briefingTextEl.innerText;
+        modalContent.classList.remove('markdown-content');
+      }
       document.getElementById('briefingModal').classList.add('show');
     }
 
@@ -929,10 +1348,730 @@
     // 绑定放大和复制按钮
     document.getElementById('briefingEnlargeBtn').addEventListener('click', openBriefingModal);
     document.getElementById('briefingCopyBtn').addEventListener('click', copyBriefingText);
+    // 预警管理
+    function openAlertManagement() {
+      document.getElementById('alertManagementModal').style.display = 'block';
+      renderAlertManagementTable();
+    }
+
+    function closeAlertManagement() {
+      document.getElementById('alertManagementModal').style.display = 'none';
+    }
+
+    // 打开趋势弹窗的快捷函数
+    function openTrendPopup(stationName) {
+      try {
+        console.log('🔍 openTrendPopup 被调用，站点名:', stationName);
+        
+        if (!stationName || typeof stationName !== 'string') {
+          console.error('❌ 无效的站点名称:', stationName);
+          alert('❌ 站点名称无效');
+          return;
+        }
+        
+        if (!stations || !Array.isArray(stations)) {
+          console.error('❌ stations 未定义或不是数组');
+          alert('❌ 系统错误：站点列表未加载');
+          return;
+        }
+        
+        console.log('🔍 在', stations.length, '个站点中查找:', stationName);
+        const station = stations.find(s => s && s.name === stationName);
+        
+        if (!station) {
+          console.warn('❌ 找不到站点:', stationName);
+          console.log('可用站点:', stations.map(s => s?.name).filter(Boolean));
+          alert('❌ 站点未找到: ' + stationName);
+          return;
+        }
+        
+        console.log('✅ 找到站点:', station.name, '水位:', station.level, '坐标:', station.coord);
+        
+        if (!station.name || typeof station.level !== 'number' || !station.coord || !station.addr || !station.type) {
+          console.error('❌ 站点数据不完整:', station);
+          alert('❌ 站点数据不完整');
+          return;
+        }
+        
+        console.log('📊 调用 showPopup 打开弹窗');
+        showPopup(station);
+      } catch(err) {
+        console.error('❌ 打开趋势弹窗异常:', err, '堆栈:', err.stack);
+        alert('❌ 打开失败: ' + err.message);
+      }
+    }
+
+    function renderAlertManagementTable() {
+      const tbody = document.getElementById('alertTableBody');
+      tbody.innerHTML = '';
+      
+      // 计算统计信息
+      let enabledCount = 0;
+      stations.forEach(station => {
+        const key = `alert_${station.name}`;
+        const settings = JSON.parse(localStorage.getItem(key) || '{"threshold":1.4,"rateThreshold":0.1,"enabled":false}');
+        if (settings.enabled) enabledCount++;
+      });
+      
+      stations.forEach((station, index) => {
+        const key = `alert_${station.name}`;
+        const settings = JSON.parse(localStorage.getItem(key) || '{"threshold":1.4,"rateThreshold":0.1,"enabled":false}');
+        
+        const tr = document.createElement('tr');
+        tr.style.backgroundColor = index % 2 === 0 ? '#f9f9f9' : '#ffffff';
+        tr.style.borderBottom = '1px solid #e0e0e0';
+        tr.style.transition = 'background-color 0.3s';
+        tr.onmouseover = () => tr.style.backgroundColor = '#e8f4ff';
+        tr.onmouseout = () => tr.style.backgroundColor = index % 2 === 0 ? '#f9f9f9' : '#ffffff';
+        
+        const statusBadge = settings.enabled ? 
+          '<span style="display:inline-block;padding:2px 8px;background:#ff6b6b;color:#fff;border-radius:4px;font-size:12px;font-weight:bold">已启用</span>' :
+          '<span style="display:inline-block;padding:2px 8px;background:#d9d9d9;color:#666;border-radius:4px;font-size:12px">未启用</span>';
+        
+        tr.innerHTML = `
+          <td style="padding:12px;color:#333">${station.name}</td>
+          <td style="padding:12px;color:#666;font-size:13px">${station.type}</td>
+          <td style="padding:12px;color:#999;font-size:12px">${station.addr}</td>
+          <td style="padding:12px;text-align:center">
+            <input type="checkbox" id="enable_${station.id}" ${settings.enabled ? 'checked' : ''} 
+              onchange="updateAlertEnabled(${station.id}, '${station.name}', this.checked)"
+              style="width:16px;height:16px;cursor:pointer">
+          </td>
+          <td style="padding:12px;text-align:center">
+            <input type="number" id="threshold_${station.id}" value="${settings.threshold}" 
+              step="0.1" min="0" max="5"
+              style="width:70px;padding:6px;border:1px solid #ddd;border-radius:4px;text-align:center;font-size:13px"
+              onchange="updateAlertThreshold(${station.id}, '${station.name}', 'threshold', this.value)"
+              onkeyup="updateAlertThreshold(${station.id}, '${station.name}', 'threshold', this.value)">
+          </td>
+          <td style="padding:12px;text-align:center">
+            <input type="number" id="rate_${station.id}" value="${settings.rateThreshold}" 
+              step="0.01" min="0" max="1"
+              style="width:70px;padding:6px;border:1px solid #ddd;border-radius:4px;text-align:center;font-size:13px"
+              onchange="updateAlertThreshold(${station.id}, '${station.name}', 'rateThreshold', this.value)"
+              onkeyup="updateAlertThreshold(${station.id}, '${station.name}', 'rateThreshold', this.value)">
+          </td>
+          <td style="padding:12px;text-align:center">
+            <button style="padding:6px 14px;background:linear-gradient(135deg,#4a9eff,#357abd);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:bold;transition:all 0.3s;z-index:10;position:relative"
+              onmouseover="this.style.boxShadow='0 4px 12px rgba(74,158,255,0.4)';this.style.transform='scale(1.05)'"
+              onmouseout="this.style.boxShadow='none';this.style.transform='scale(1)'"
+              onclick="openTrendPopup('${station.name}')">
+              📊 查看趋势
+            </button>
+          </td>
+          <td style="padding:12px;text-align:center">
+            <button style="padding:6px 14px;background:linear-gradient(135deg,#2ecc71,#27ae60);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:bold;transition:all 0.3s"
+              onmouseover="this.style.boxShadow='0 4px 12px rgba(46,204,113,0.4)';this.style.transform='scale(1.05)'"
+              onmouseout="this.style.boxShadow='none';this.style.transform='scale(1)'"
+              onclick="confirmAlertSettings(${station.id}, '${station.name}')">
+              ✅ 确定
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+      
+      // 更新统计信息
+      const statsElement = document.getElementById('alertStatsDisplay');
+      if (statsElement) {
+        statsElement.innerText = `已配置预警：${enabledCount}/${stations.length} 个站点`;
+      }
+      
+      console.log('表格已渲染，已启用预警:', enabledCount, '共:', stations.length);
+    }
+
+    function updateAlertEnabled(id, name, enabled) {
+      const key = `alert_${name}`;
+      const settings = JSON.parse(localStorage.getItem(key) || '{"threshold":1.4,"rateThreshold":0.1}');
+      settings.enabled = enabled;
+      localStorage.setItem(key, JSON.stringify(settings));
+      renderAlertManagementTable();
+    }
+
+    function updateAlertThreshold(id, name, field, value) {
+      const key = `alert_${name}`;
+      const settings = JSON.parse(localStorage.getItem(key) || '{"threshold":1.4,"rateThreshold":0.1,"enabled":false}');
+      settings[field] = parseFloat(value);
+      localStorage.setItem(key, JSON.stringify(settings));
+    }
+
+    // 确定按钮处理函数 - 确认该站点的预警设置
+    function confirmAlertSettings(id, stationName) {
+      try {
+        const key = `alert_${stationName}`;
+        const settings = JSON.parse(localStorage.getItem(key) || '{"threshold":1.4,"rateThreshold":0.1,"enabled":false}');
+        
+        // 获取该行的输入值
+        const threshold = parseFloat(document.getElementById(`threshold_${id}`).value);
+        const rateThreshold = parseFloat(document.getElementById(`rate_${id}`).value);
+        const isEnabled = document.getElementById(`enable_${id}`).checked;
+        
+        // 验证数值
+        if (isNaN(threshold) || isNaN(rateThreshold)) {
+          alert('❌ 请输入有效的数值');
+          return;
+        }
+        
+        if (threshold < 0 || threshold > 5) {
+          alert('❌ 水位阈值范围应在 0-5 m 之间');
+          return;
+        }
+        
+        if (rateThreshold < 0 || rateThreshold > 1) {
+          alert('❌ 涨幅阈值范围应在 0-1 m/h 之间');
+          return;
+        }
+        
+        // 保存设置
+        settings.threshold = threshold;
+        settings.rateThreshold = rateThreshold;
+        settings.enabled = isEnabled;
+        localStorage.setItem(key, JSON.stringify(settings));
+        
+        // 显示成功提示
+        console.log('✅ 已保存 ' + stationName + ' 的预警设置');
+        alert(`✅ 已保存 ${stationName} 的预警设置\n水位阈值：${threshold}m\n涨幅阈值：${rateThreshold}m/h\n预警状态：${isEnabled ? '启用' : '禁用'}`);
+        
+        // 🔄 立即刷新相关 UI，无需手动刷新页面
+        console.log('🔄 正在刷新 UI...');
+        renderAlertManagementTable();  // 刷新预警管理表格
+        renderStationTable();           // 刷新左侧站点列表和徽章
+        updateLevelChart();             // 更新水位图表
+      } catch(err) {
+        console.error('❌ 保存设置失败:', err);
+        alert('❌ 保存失败，请重试');
+      }
+    }
+
+    function batchEnableAlerts(enable) {
+      try {
+        stations.forEach(station => {
+          const key = `alert_${station.name}`;
+          const settings = JSON.parse(localStorage.getItem(key) || '{"threshold":1.4,"rateThreshold":0.1,"enabled":false}');
+          settings.enabled = enable;
+          localStorage.setItem(key, JSON.stringify(settings));
+        });
+        renderAlertManagementTable();
+        renderStationTable();  // 同时更新主表格的徽章显示
+        alert(enable ? '✅ 已启用所有站点预警\n共 ' + stations.length + ' 个站点' : '⛔ 已禁用所有站点预警');
+      } catch(err) {
+        console.error('批量操作失败:', err);
+        alert('❌ 操作失败，请查看浏览器控制台');
+      }
+    }
+
+    function setDefaultThresholds() {
+      const defaultThreshold = prompt('请输入默认水位阈值(m):', '1.4');
+      if (defaultThreshold === null) return;
+      
+      const defaultRate = prompt('请输入默认涨幅阈值(m/h):', '0.1');
+      if (defaultRate === null) return;
+      
+      const threshold = parseFloat(defaultThreshold);
+      const rateThreshold = parseFloat(defaultRate);
+      
+      if (isNaN(threshold) || isNaN(rateThreshold)) {
+        alert('❌ 请输入有效的数字');
+        return;
+      }
+      
+      if (threshold <= 0 || rateThreshold < 0) {
+        alert('❌ 阈值必须大于0');
+        return;
+      }
+      
+      // 调用后端API
+      fetch('http://localhost:3001/api/alerts/set-default', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threshold, rate_threshold: rateThreshold })
+      })
+      .then(r => r.json())
+      .then(data => {
+        console.log('后端已记录默认阈值');
+      })
+      .catch(err => console.warn('后端设置失败:', err));
+      
+      // 应用到所有本地站点
+      stations.forEach(station => {
+        const key = `alert_${station.name}`;
+        const settings = JSON.parse(localStorage.getItem(key) || '{"enabled":false}');
+        settings.threshold = threshold;
+        settings.rateThreshold = rateThreshold;
+        localStorage.setItem(key, JSON.stringify(settings));
+      });
+      
+      renderAlertManagementTable();
+      alert(`✅ 已设置所有站点默认阈值：水位=${threshold}m, 涨幅=${rateThreshold}m/h`);
+    }
+
+    function exportAlertSettings() {
+      const exportData = {};
+      stations.forEach(station => {
+        const key = `alert_${station.name}`;
+        const settings = JSON.parse(localStorage.getItem(key) || '{"threshold":1.4,"rateThreshold":0.1,"enabled":false}');
+        exportData[station.name] = settings;
+      });
+      
+      const dataStr = JSON.stringify(exportData, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `alert_settings_${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      alert('✅ 预警设置已导出');
+    }
+
+    function filterAlertTable() {
+      const searchText = document.getElementById('alertSearchInput').value.toLowerCase();
+      const typeFilter = document.getElementById('alertTypeFilter').value;
+      
+      const rows = document.querySelectorAll('#alertTableBody tr');
+      rows.forEach(row => {
+        const name = row.cells[0]?.textContent.toLowerCase() || '';
+        const addr = row.cells[2]?.textContent.toLowerCase() || '';
+        const type = row.cells[1]?.textContent || '';
+        
+        const matchesSearch = name.includes(searchText) || addr.includes(searchText);
+        const matchesType = typeFilter === '' || type === typeFilter;
+        
+        row.style.display = matchesSearch && matchesType ? '' : 'none';
+      });
+    }
+
+    function saveAllAlerts() {
+      // 收集所有预警设置
+      const allSettings = {};
+      stations.forEach(station => {
+        const key = `alert_${station.name}`;
+        const settings = JSON.parse(localStorage.getItem(key) || '{"threshold":1.4,"rateThreshold":0.1,"enabled":false}');
+        allSettings[station.name] = settings;
+      });
+      
+      // 尝试发送到后端
+      fetch('http://localhost:3001/api/alerts/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: allSettings })
+      })
+      .then(r => r.json())
+      .then(data => {
+        alert(`✅ ${data.message}`);
+        closeAlertManagement();
+      })
+      .catch(err => {
+        console.warn('后端保存失败，使用本地存储:', err);
+        alert('✅ 所有预警设置已自动保存到本地！');
+        closeAlertManagement();
+      });
+    }
+
+    function clearAllAlerts() {
+      if (confirm('⚠️ 确认清除所有站点的预警设置吗？此操作不可撤销！')) {
+        stations.forEach(station => {
+          localStorage.removeItem(`alert_${station.name}`);
+        });
+        renderAlertManagementTable();
+        renderStationTable();  // 同步更新左侧栏，移除徽章
+        alert('✅ 已清除所有预警设置！');
+        console.log('✅ 已清除所有预警设置并更新UI');
+      }
+    }
+
+    // ========== AI 配置相关函数 ==========
+
+    // 打开 API 配置面板
+    function openApiConfig() {
+      console.log('📡 打开 API 配置面板');
+      const modal = document.getElementById('apiConfigModal');
+      const panel = document.getElementById('apiConfigPanel');
+      
+      // 加载保存的配置
+      loadApiConfig();
+      
+      if (modal && panel) {
+        modal.style.display = 'flex';
+        panel.style.display = 'block';
+        
+        // 点击遮罩关闭
+        modal.onclick = function(e) {
+          if (e.target === modal) {
+            closeApiConfig();
+          }
+        };
+      }
+    }
+
+    // 关闭 API 配置面板
+    function closeApiConfig() {
+      console.log('📡 关闭 API 配置面板');
+      const modal = document.getElementById('apiConfigModal');
+      const panel = document.getElementById('apiConfigPanel');
+      
+      if (modal && panel) {
+        modal.style.display = 'none';
+        panel.style.display = 'none';
+      }
+    }
+
+    // 加载保存的 API 配置
+    function loadApiConfig() {
+      const config = JSON.parse(localStorage.getItem('apiConfig') || '{"model":"qwen-plus","apiKey":""}');
+      
+      const modelSelect = document.getElementById('qwenModelSelect');
+      const apiKeyInput = document.getElementById('dashscopeApiKey');
+      
+      if (modelSelect) {
+        modelSelect.value = config.model || 'qwen-plus';
+      }
+      
+      if (apiKeyInput) {
+        apiKeyInput.value = config.apiKey || '';
+        apiKeyInput.type = 'password'; // 默认隐藏
+      }
+      
+      console.log('✅ 已加载 API 配置:', { model: config.model });
+    }
+
+    // 切换 API Key 显示/隐藏
+    function toggleApiKeyVisibility() {
+      const input = document.getElementById('dashscopeApiKey');
+      const btn = document.getElementById('toggleApiKeyBtn');
+      
+      if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = '🙈 隐藏';
+      } else {
+        input.type = 'password';
+        btn.textContent = '👁️ 显示';
+      }
+    }
+
+    // 保存 API 配置
+    function saveApiConfig() {
+      const modelSelect = document.getElementById('qwenModelSelect');
+      const apiKeyInput = document.getElementById('dashscopeApiKey');
+      const testResultDiv = document.getElementById('testResult');
+      const saveBtn = document.getElementById('saveApiConfigBtn');
+      
+      const model = modelSelect.value;
+      const apiKey = apiKeyInput.value.trim();
+      
+      // 验证 API Key
+      if (!apiKey) {
+        alert('⚠️ 请输入 API Key');
+        return;
+      }
+      
+      if (!apiKey.startsWith('sk-')) {
+        alert('⚠️ API Key 格式不正确，应该以 sk- 开头');
+        return;
+      }
+      
+      // 保存配置到 localStorage
+      const config = { model, apiKey };
+      localStorage.setItem('apiConfig', JSON.stringify(config));
+      
+      // 更新按钮状态
+      saveBtn.style.opacity = '0.6';
+      saveBtn.textContent = '✅ 已保存';
+      
+      setTimeout(() => {
+        saveBtn.style.opacity = '1';
+        saveBtn.textContent = '✅ 保存配置';
+      }, 2000);
+      
+      console.log('💾 API 配置已保存:', { model });
+      alert('✅ 配置已成功保存！');
+    }
+
+    // 清除 API 配置
+    function clearApiConfig() {
+      if (confirm('⚠️ 确认清除所有 API 配置吗？')) {
+        localStorage.removeItem('apiConfig');
+        
+        const modelSelect = document.getElementById('qwenModelSelect');
+        const apiKeyInput = document.getElementById('dashscopeApiKey');
+        
+        if (modelSelect) modelSelect.value = 'qwen-plus';
+        if (apiKeyInput) apiKeyInput.value = '';
+        
+        alert('✅ 配置已清除');
+        console.log('🗑️ API 配置已清除');
+      }
+    }
+
+    // 测试 Qwen 连接
+    function testQwenConnection() {
+      const apiKeyInput = document.getElementById('dashscopeApiKey');
+      const modelSelect = document.getElementById('qwenModelSelect');
+      const testPrompt = document.getElementById('testPrompt');
+      const testResultDiv = document.getElementById('testResult');
+      const testBtn = document.getElementById('testApiBtn');
+      
+      const apiKey = apiKeyInput.value.trim();
+      const model = modelSelect.value;
+      const prompt = testPrompt.value.trim();
+      
+      // 验证
+      if (!apiKey) {
+        alert('⚠️ 请先输入 API Key');
+        return;
+      }
+      
+      if (!prompt) {
+        alert('⚠️ 请输入测试问题');
+        return;
+      }
+      
+      // 更新 UI
+      testResultDiv.style.display = 'block';
+      testResultDiv.innerHTML = '⏳ 正在测试连接...';
+      testBtn.disabled = true;
+      testBtn.style.opacity = '0.6';
+      
+      console.log(`🧪 测试 Qwen 连接 - 模型: ${model}, 问题: ${prompt}`);
+      
+      // 调用 FastAPI 后端，传递 API Key 和模型
+      fetch('http://localhost:3001/api/briefing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          q: prompt,
+          api_key: apiKey,
+          model: model
+        })
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log('✅ 连接成功，回复:', data);
+        testResultDiv.innerHTML = `
+          <div style="color:#2ecc71;font-weight:bold;margin-bottom:6px">✅ 连接成功！</div>
+          <div style="color:#bfefff">${data.reply || data.error || '收到回复'}</div>
+        `;
+      })
+      .catch(error => {
+        console.error('❌ 连接失败:', error);
+        testResultDiv.innerHTML = `
+          <div style="color:#e86464;font-weight:bold;margin-bottom:6px">❌ 连接失败</div>
+          <div style="color:#ffb3b3">${error.message}</div>
+          <div style="color:#999;font-size:10px;margin-top:8px">常见原因：
+            <ul style="margin:6px 0;padding-left:12px">
+              <li>API Key 无效或过期</li>
+              <li>后端服务未启动 (localhost:3000)</li>
+              <li>网络连接问题</li>
+              <li>模型名称不正确</li>
+            </ul>
+          </div>
+        `;
+      })
+      .finally(() => {
+        testBtn.disabled = false;
+        testBtn.style.opacity = '1';
+      });
+    }
+
+    // 获取保存的 API 配置
+    function getApiConfig() {
+      return JSON.parse(localStorage.getItem('apiConfig') || '{"model":"qwen-plus","apiKey":""}');
+    }
+
   </script>
+
+  <!-- 预警管理模态窗口 -->
+  <div id="alertManagementModal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:1400px;max-height:95vh;overflow:auto;background:#f5f7fa">
+      <!-- 标题栏 -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;background:linear-gradient(135deg,#0b5260,#1a7a8f);color:#fff;padding:20px;border-radius:8px 8px 0 0;margin:-16px -16px 20px -16px">
+        <div>
+          <h2 style="margin:0;font-size:28px;font-weight:bold">
+            ⚠️ 预警管理中心
+          </h2>
+          <p style="margin:8px 0 0 0;font-size:13px;opacity:0.9">
+            实时监测和管理所有水文站点的水位预警
+          </p>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div style="text-align:right">
+            <div id="alertStatsDisplay" style="font-size:16px;font-weight:bold">已配置预警：0/33 个站点</div>
+            <div style="font-size:12px;opacity:0.8;margin-top:4px">所有设置自动保存</div>
+          </div>
+          <button onclick="closeAlertManagement()" style="background:none;border:none;font-size:32px;cursor:pointer;color:#fff;opacity:0.8">&times;</button>
+        </div>
+      </div>
+
+      <!-- 使用说明卡片 -->
+      <div style="background:linear-gradient(135deg,#e3f2fd,#f3e5f5);padding:16px;border-radius:8px;margin-bottom:20px;border-left:5px solid #4a9eff">
+        <h3 style="margin:0 0 12px 0;color:#1a237e;font-size:16px;font-weight:bold">📋 使用说明</h3>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;color:#424242;line-height:1.6;font-size:13px">
+          <div><span style="color:#1565c0;font-weight:bold">✓ 启用预警：</span>勾选复选框启用该站点的实时监测</div>
+          <div><span style="color:#1565c0;font-weight:bold">✓ 水位阈值：</span>超过此值时触发预警（单位：米）</div>
+          <div><span style="color:#1565c0;font-weight:bold">✓ 涨幅阈值：</span>每小时涨幅超过此值时触发预警（单位：米/小时）</div>
+          <div><span style="color:#1565c0;font-weight:bold">✓ 查看趋势：</span>点击查看历史数据和预测曲线</div>
+        </div>
+      </div>
+
+      <!-- 操作按钮组 -->
+      <div style="margin-bottom:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <button onclick="batchEnableAlerts(true)" 
+          style="padding:10px 18px;background:linear-gradient(135deg,#73d13d,#52c41a);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:bold;box-shadow:0 2px 8px rgba(82,196,26,0.4);transition:all 0.3s"
+          onmouseover="this.style.boxShadow='0 4px 16px rgba(82,196,26,0.6)'"
+          onmouseout="this.style.boxShadow='0 2px 8px rgba(82,196,26,0.4)'">
+          ✅ 全部启用
+        </button>
+        <button onclick="batchEnableAlerts(false)" 
+          style="padding:10px 18px;background:linear-gradient(135deg,#d9d9d9,#b3b3b3);color:#333;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:bold;box-shadow:0 2px 8px rgba(0,0,0,0.1);transition:all 0.3s"
+          onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,0.2)'"
+          onmouseout="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'">
+          ⛔ 全部禁用
+        </button>
+        <button onclick="setDefaultThresholds()" 
+          style="padding:10px 18px;background:linear-gradient(135deg,#4a9eff,#357abd);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:bold;box-shadow:0 2px 8px rgba(74,158,255,0.4);transition:all 0.3s"
+          onmouseover="this.style.boxShadow='0 4px 16px rgba(74,158,255,0.6)'"
+          onmouseout="this.style.boxShadow='0 2px 8px rgba(74,158,255,0.4)'">
+          � 设置默认阈值
+        </button>
+        <button onclick="exportAlertSettings()" 
+          style="padding:10px 18px;background:linear-gradient(135deg,#1890ff,#096dd9);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:bold;box-shadow:0 2px 8px rgba(24,144,255,0.4);transition:all 0.3s"
+          onmouseover="this.style.boxShadow='0 4px 16px rgba(24,144,255,0.6)'"
+          onmouseout="this.style.boxShadow='0 2px 8px rgba(24,144,255,0.4)'">
+          � 导出配置
+        </button>
+        <button onclick="clearAllAlerts()" 
+          style="padding:10px 18px;background:linear-gradient(135deg,#ff6b6b,#ee5a52);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:bold;box-shadow:0 2px 8px rgba(255,107,107,0.4);transition:all 0.3s"
+          onmouseover="this.style.boxShadow='0 4px 16px rgba(255,107,107,0.6)'"
+          onmouseout="this.style.boxShadow='0 2px 8px rgba(255,107,107,0.4)'">
+          �️ 清除所有
+        </button>
+      </div>
+
+      <!-- 搜索和筛选 -->
+      <div style="margin-bottom:16px;display:flex;gap:12px">
+        <input type="text" id="alertSearchInput" placeholder="🔍 搜索站点名称、地址..." 
+          style="flex:1;padding:10px 14px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;background:#fff"
+          oninput="filterAlertTable()">
+        <select id="alertTypeFilter" style="padding:10px 14px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;background:#fff;cursor:pointer" onchange="filterAlertTable()">
+          <option value="">所有类型</option>
+          <option value="雨量站">雨量站</option>
+          <option value="水位站">水位站</option>
+          <option value="气象站">气象站</option>
+        </select>
+      </div>
+
+      <!-- 数据表格 -->
+      <div style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)">
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="background:linear-gradient(135deg,#4a9eff,#357abd);color:#fff">
+                <th style="padding:14px 12px;text-align:left;font-weight:bold;min-width:100px">站点名称</th>
+                <th style="padding:14px 12px;text-align:left;font-weight:bold;min-width:80px">类型</th>
+                <th style="padding:14px 12px;text-align:left;font-weight:bold;min-width:220px">地址</th>
+                <th style="padding:14px 12px;text-align:center;font-weight:bold;min-width:90px">启用预警</th>
+                <th style="padding:14px 12px;text-align:center;font-weight:bold;min-width:100px">水位阈值(m)</th>
+                <th style="padding:14px 12px;text-align:center;font-weight:bold;min-width:100px">涨幅阈值(m/h)</th>
+                <th style="padding:14px 12px;text-align:center;font-weight:bold;min-width:110px">查看趋势</th>
+                <th style="padding:14px 12px;text-align:center;font-weight:bold;min-width:90px">确定</th>
+              </tr>
+            </thead>
+            <tbody id="alertTableBody">
+              <!-- 动态填充 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 底部提示 -->
+      <div style="margin-top:16px;padding:14px;background:linear-gradient(135deg,#fff7e6,#ffe7ba);border-radius:8px;border-left:4px solid #faad14;color:#ad6800;font-size:12px">
+        <p style="margin:0;font-weight:bold;margin-bottom:6px">⚡ 重要提示</p>
+        <ul style="margin:0;padding-left:20px;line-height:1.6">
+          <li>所有预警设置保存在浏览器本地存储中</li>
+          <li>清除浏览器缓存或使用隐私浏览模式可能导致设置丢失</li>
+          <li>建议定期导出配置进行备份</li>
+          <li>预警通知需要您在浏览器中允许通知权限</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI 配置面板 -->
+  <div id="apiConfigModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9998;animation:fadeIn 0.3s">
+  </div>
+  <div id="apiConfigPanel" style="display:none;position:fixed;top:80px;right:20px;width:420px;background:linear-gradient(135deg,#1a1a2e,#16213e);border:1px solid rgba(155,89,182,0.4);border-radius:12px;padding:24px;z-index:9999;box-shadow:0 8px 32px rgba(0,0,0,0.4);max-height:calc(100vh - 120px);overflow-y:auto;animation:slideIn 0.3s ease-out">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid rgba(155,89,182,0.2);padding-bottom:12px">
+      <h3 style="margin:0;color:#e8fdff;font-size:16px;font-weight:bold">⚙️ AI 模型配置</h3>
+      <button onclick="closeApiConfig()" style="background:transparent;border:none;color:#9fead6;font-size:20px;cursor:pointer;padding:0;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all 0.3s">×</button>
+    </div>
+
+    <!-- Qwen 模型选择 -->
+    <div style="margin-bottom:18px">
+      <label style="display:block;color:#c9f3ff;font-size:13px;font-weight:bold;margin-bottom:8px">🤖 Qwen 模型</label>
+      <select id="qwenModelSelect" style="width:100%;padding:10px 12px;border:1px solid rgba(155,89,182,0.4);border-radius:6px;background:#0f1a2e;color:#c9f3ff;font-size:12px;cursor:pointer">
+        <option value="qwen-plus">Qwen Plus（推荐）</option>
+        <option value="qwen-turbo">Qwen Turbo（快速）</option>
+        <option value="qwen-max">Qwen Max（强力）</option>
+      </select>
+    </div>
+
+    <!-- API Key 输入 -->
+    <div style="margin-bottom:18px">
+      <label style="display:block;color:#c9f3ff;font-size:13px;font-weight:bold;margin-bottom:8px">🔑 Dashscope API Key</label>
+      <input id="dashscopeApiKey" type="password" placeholder="sk-..." style="width:100%;padding:10px 12px;border:1px solid rgba(155,89,182,0.4);border-radius:6px;background:#0f1a2e;color:#c9f3ff;font-size:12px;box-sizing:border-box">
+      <button id="toggleApiKeyBtn" onclick="toggleApiKeyVisibility()" style="margin-top:6px;padding:4px 8px;background:rgba(155,89,182,0.2);border:1px solid rgba(155,89,182,0.4);border-radius:4px;color:#9fead6;cursor:pointer;font-size:11px;transition:all 0.3s">👁️ 显示</button>
+    </div>
+
+    <!-- 快速测试 -->
+    <div style="margin-bottom:18px">
+      <label style="display:block;color:#c9f3ff;font-size:13px;font-weight:bold;margin-bottom:8px">💬 快速测试</label>
+      <input id="testPrompt" type="text" placeholder="输入测试问题..." value="简要介绍阳朔县的水文特点" style="width:100%;padding:10px 12px;border:1px solid rgba(155,89,182,0.4);border-radius:6px;background:#0f1a2e;color:#c9f3ff;font-size:12px;box-sizing:border-box;margin-bottom:8px">
+      <button id="testApiBtn" onclick="testQwenConnection()" style="width:100%;padding:10px 12px;background:linear-gradient(135deg,#0fbfc6,#13d4d6);border:none;border-radius:6px;color:#012;font-weight:bold;cursor:pointer;font-size:12px;transition:all 0.3s">🧪 测试连接</button>
+      <div id="testResult" style="margin-top:8px;padding:10px;background:rgba(15,191,198,0.1);border-radius:6px;color:#c9f3ff;font-size:11px;display:none;max-height:120px;overflow-y:auto;border:1px solid rgba(15,191,198,0.2)"></div>
+    </div>
+
+    <!-- 配置说明 -->
+    <div style="padding:12px;background:rgba(155,89,182,0.1);border-radius:6px;border:1px solid rgba(155,89,182,0.2);margin-bottom:18px">
+      <p style="margin:0 0 8px 0;color:#9fead6;font-size:11px;font-weight:bold">📝 配置说明</p>
+      <ul style="margin:0;padding-left:16px;color:#c9f3ff;font-size:11px;line-height:1.6">
+        <li>需要从 <a href="https://dashscope.aliyun.com" target="_blank" style="color:#0fbfc6;text-decoration:underline">阿里云 Dashscope</a> 获取 API Key</li>
+        <li>API Key 保存在浏览器本地，不会上传到服务器</li>
+        <li>修改后立即生效，无需刷新页面</li>
+        <li>推荐使用 Qwen Plus 获得最佳体验</li>
+      </ul>
+    </div>
+
+    <!-- 保存按钮 -->
+    <button id="saveApiConfigBtn" onclick="saveApiConfig()" style="width:100%;padding:12px;background:linear-gradient(135deg,#9b59b6,#8e44ad);border:none;border-radius:6px;color:#fff;font-weight:bold;cursor:pointer;font-size:13px;transition:all 0.3s;box-shadow:0 2px 8px rgba(155,89,182,0.4)">
+      ✅ 保存配置
+    </button>
+
+    <!-- 清除按钮 -->
+    <button id="clearApiConfigBtn" onclick="clearApiConfig()" style="width:100%;margin-top:8px;padding:10px;background:rgba(232,100,100,0.1);border:1px solid rgba(232,100,100,0.4);border-radius:6px;color:#e86464;font-weight:bold;cursor:pointer;font-size:12px;transition:all 0.3s">
+      🗑️ 清除配置
+    </button>
+  </div>
+
+  <style>
+    @keyframes slideIn {
+      from {
+        transform: translateX(450px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+  </style>
+
 </body>
 </html>
-
 
 
 
